@@ -1679,7 +1679,7 @@ int main() {
 	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, niter, nout, nxout, nyout, offset_h, kk, k, mx, my, border, tt, write_i = 0, each = 1;					  //parameters
 	double Vxm, Vym, pm, Cm, each_t = 10.0;
 
-
+	//alternative geometry
 	/*
 	multi_line M_CROSS;
 	M_CROSS.generate_levels(30, 30, 30, 3, 5);
@@ -1690,43 +1690,14 @@ int main() {
 	*/
 
 
-	ny_h = 60;	nx_h = 60;
+	ny_h = 60;	// nodes of the pore width
+	nx_h = 60;	// nodes of the tube length
+	hy_h = 1.0 / ny_h;	hx_h = hy_h; //the grid step
 
-	hy_h = 1.0 / ny_h;	hx_h = hy_h;
-
-	each_t = 0.1;
+	each_t = 0.1; // fraction of time to write to a file
 	each = 1; //each #th node to write to a file
-	Matrix_X = 5;
-	Matrix_Y = 5;
-
-
-	
-	multi_cross M_CROSS;
-
-	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
-	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
-	pause
-	M_CROSS.set_type();
-	//M_CROSS.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
-	//M_CROSS.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
-	M_CROSS.set_neighbor();
-	M_CROSS.set_global_id();
-	
-
-	stupid_step(M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.t, M_CROSS.J_back, M_CROSS.TOTAL_SIZE);
-
-
-
-	cudaCheckError()
-
-	Lx_h = hx_h * (M_CROSS.nxg);
-	Ly_h = hy_h * (M_CROSS.nyg);
-
-	cudaDeviceSynchronize();
-
-	
-
-
+	Matrix_X = 5;   //Nx elements of the porous matrix
+	Matrix_Y = 5;	//Ny elements of the porous matrix
 
 	//1 is 'yes' / true, 0 is 'no' / false
 	int picture_switch = 1; //write fields to a file?
@@ -1734,13 +1705,11 @@ int main() {
 
 
 
-	tau_h = 0.5e-4;
+	tau_h = 0.5e-4; 
 	tt = round(1.0 / tau_h);
 
 	nxout = 1;
 	nyout = 1;
-
-
 	A_h = -0.5;
 	Ca_h = 4 * 1e-4;
 	Gr_h = 0.0;
@@ -1753,8 +1722,8 @@ int main() {
 	tau_p_h = 0.2*hx_h*hx_h;
 
 
-
-	ifstream read("inp.dat");
+	ifstream read;
+	read.open("inp.dat");
 	/*
 	//lambda-expression to skip the rest of a line:
 	auto skip = [&read]() {while (read.peek() != '\n') read.ignore();  };
@@ -1773,15 +1742,41 @@ int main() {
 	read >> MM; skip();
 	read.close();
 	*/
+	read.close();
+
+
+	multi_cross M_CROSS;
+
+	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
+	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
+	pause
+	M_CROSS.set_type();
+	//M_CROSS.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
+	//M_CROSS.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
+	M_CROSS.set_neighbor();
+	M_CROSS.set_global_id();
+	
+	//here we copy the arrays responsible for the geometry to GPU
+	stupid_step(M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.t, M_CROSS.J_back, M_CROSS.TOTAL_SIZE);
+
+
+
+	cudaCheckError()
+
+	//total Length and Width of the porous matrix
+	Lx_h = hx_h * (M_CROSS.nxg);
+	Ly_h = hy_h * (M_CROSS.nyg);
+
+	cudaDeviceSynchronize();
 
 
 	//size setting
+	//you may just skip it, that is weird
 	offset_h = nx_h + 1;
 	unsigned int size_l = M_CROSS.TOTAL_SIZE; //Number of all nodes/elements 
 	if (size_l <= 1024 || size_l >= 1024 * 1024 * 1024) { cout << "data is too small or too large" << endl; return 0; }
 	std::cout << "size_l=" << size_l << endl;
 	size_t size_b /*size (in) bytes*/ = size_l * sizeof(double); //sizeof(double) = 8 bytes
-
 	size_t thread_x_d /*the dimension of x in a block*/ = 1024;
 	size_t threads_per_block = thread_x_d;
 
@@ -1791,6 +1786,7 @@ int main() {
 	std::cout << "blockD.x=" << blockD.x << endl;
 
 	//setting for the reduction procedure 
+	//that is even weirder, skip it, don't hesitate 
 	unsigned long long int *Gp, *Np;
 	unsigned int s = 0;
 
@@ -1836,6 +1832,7 @@ int main() {
 		(s != 1) ? cudaMalloc((void**)&psiav_array, sizeof(double)*Np[1]) : cudaMalloc((void**)&psiav_array, sizeof(double));
 	}
 
+	//you never guess what it is, so forget
 	arr[0] = p;
 	for (int i = 1; i <= s; i++)
 		arr[i] = psiav_array;
@@ -1847,18 +1844,21 @@ int main() {
 	ofstream integrals;
 	ofstream k_number;
 	read.open("recovery.dat");
+
+	//checking whether a recovery file exists or not
+	//if not we start at t = 0, otherwise we continue from the saved data
 	bool file_exists = read.good();
 	if (read_switch == 0) file_exists = false;
 	if (file_exists == true) { read_switch = 1; 	std::cout << "CONTINUE" << endl; }
 	else { read_switch = 0;	iter = 0; std::cout << "from the Start" << endl; }
 
-
+	//continue
 	if (read_switch == 1) {
 		integrals.open("integrals.dat", std::ofstream::app);
 		M_CROSS.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i);
 	}
 
-
+	//from the start
 	if (read_switch == 0) integrals.open("integrals.dat");
 
 
@@ -1902,49 +1902,36 @@ int main() {
 //		cudaMemcpyToSymbol(Moffset, &M_CROSS.Moffset, sizeof(int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(TOTAL_SIZE, &M_CROSS.TOTAL_SIZE, sizeof(int), 0, cudaMemcpyHostToDevice);
 	}
+
 	//just printing parameters from GPU to be confident they are passed correctly 
 	hello << <1, 1 >> > ();
 	cudaDeviceSynchronize();
 
-	//just time in the double precision format
-	double timeq = 0.0;
-
-	m = 0.0; psiav = 0.0; Ek = 0; Ek_old = 0; kk = 1000000;
-
+	
+	double timeq = 0.0; //just time in the double precision format
+	Ek = 0; Ek_old = 0; 
+	kk = 1000000; //Poisson iteration limit 
 
 	pause
 
 
 
-
-
-
-		
-
-
-
-
-			//measure real time of calculating 
+	//measure real time of calculating 
 	timer1 = clock() / CLOCKS_PER_SEC;
+
+
 	M_CROSS.write_field(C_h, "test", 0, 1);
 
-
-
-
-	
-
-
-	
-
-
+	//write the file with parameters
+	//this step was written for making movies
 	{
-#ifdef __linux__ 
-		ofstream to_file("fields/param.dat");
-#endif
-#ifdef _WIN32
-		ofstream to_file("fields\\param.dat");
-#endif
-#define space << " " << 
+	#ifdef __linux__ 
+			ofstream to_file("fields/param.dat");
+	#endif
+	#ifdef _WIN32
+			ofstream to_file("fields\\param.dat");
+	#endif
+	#define space << " " << 
 	to_file << M_CROSS.nxg / each space M_CROSS.nyg / each space hx_h*each space hy_h*each space Lx_h space Ly_h
 		space Gr_h space Ca_h space Pe_h space Re_h space A_h space MM_h space alpha_h
 		<< endl;
@@ -1953,131 +1940,124 @@ int main() {
 
 	
 
-			// the main time loop of the whole calculation procedure
-		while (true) {
+	// the main time loop of the whole calculation procedure
+	while (true) {
 
 
-			iter = iter + 1; 	timeq = timeq + tau_h;
+		iter = iter + 1; 	timeq = timeq + tau_h;
 
 
-			//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
+		//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
+		{
+			//chemical_potential << <gridD, blockD >> > (mu, C);
+			quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+			concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+		}
+
+
+		//2nd step, Poisson equation for pressure 
+		{
+			eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
+
+			while (eps > eps0*psiav0 && k < kk) 
 			{
-				//chemical_potential << <gridD, blockD >> > (mu, C);
-				quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-				concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+
+				psiav = 0.0;  k++;
+				Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
+
+				/*old reduction but I am sure it to be working quite well, never mind*/
+				//reduction00 << < ceil(size_l / 1024.0), 1024, 1024 * sizeof(double) >> > (p, size_l, psiav_array);
+				//reduction00 << < 1, last_reduce, last_reduce * sizeof(double) >> > (psiav_array, last_reduce, psiav_array);
+
+				for (int i = 0; i < s; i++)
+					reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
+				swap_one << <gridD, blockD >> > (p0, p);
+				cudaMemcpy(&psiav, psiav_array, sizeof(double), cudaMemcpyDeviceToHost);
+
+				eps = abs(psiav - psiav0); 	psiav0 = psiav;
+
+				if (k % 1000 == 0) {
+					cout << "p_iter=" << k << endl;
+				}
 			}
 
-			
-			//2nd step, Poisson equation for pressure 
+
+		}
+		kk = k;
+		//pause
+
+
+
+
+		//3rd step, velocity correction and swapping field values
+		velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
+
+		swap_3 << <gridD, blockD >> > (ux, vx, uy, vy, C0, C);
+
+
+
+
+		//4th step, printing resulrs, writing data and whatever you want
+		if (iter % (tt / 10) == 0 || iter == 1) {
+			cout << setprecision(15) << endl;
+			cout << fixed << endl;
+			cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+			cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+			cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
+			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
+
+
+			timer
+			cout << "t= " << tau_h*iter << endl;
+			cout << "Vmax= " << Vmax << endl;
+			cout << "Ek= " << Ek << endl;
+			cout << "dEk= " << abs(Ek - Ek_old) << endl;
+			cout << "p_iter=" << k << endl;
+			cout << "Q_in=" << Q_in << endl;
+			cout << "Q_out=" << Q_out << endl;
+			cout << "Vx_max=" << maxval(vx_h, size_l) << endl;
+			cout << "C_max=" << maxval(C_h, size_l) << endl;
+
+			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width" << endl;
+			integrals << setprecision(20) << fixed;
+			integrals << tau_h*iter << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
+				<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
+				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
+				<< endl;
+
+			Ek_old = Ek;
+
+			//fields writing
+			if (iter % (int(each_t * tt)) == 0 || iter == 1)
 			{
-				eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
+				write_i++;
+				stringstream ss; string file_name;	ss.str(""); ss.clear();
+				ss << write_i;		file_name = ss.str();
 
-				while (eps > eps0*psiav0 && k < kk) //take a look
-				{
-
-
-
-
-					psiav = 0.0;  k++;
-					Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
-
-					/*old reduction but I am sure it to be working quite well*/
-					//reduction00 << < ceil(size_l / 1024.0), 1024, 1024 * sizeof(double) >> > (p, size_l, psiav_array);
-					//reduction00 << < 1, last_reduce, last_reduce * sizeof(double) >> > (psiav_array, last_reduce, psiav_array);
-
-					for (int i = 0; i < s; i++)
-						reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
-					swap_one << <gridD, blockD >> > (p0, p);
-					cudaMemcpy(&psiav, psiav_array, sizeof(double), cudaMemcpyDeviceToHost);
-
-					eps = abs(psiav - psiav0); 	psiav0 = psiav;
-
-
-
-					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
-
-					if (k % 1000 == 0) {
-						cout << "p_iter=" << k << endl; 
-					}
-				}
-
-
+				M_CROSS.write_field(C_h, file_name, timeq, each);
 			}
 
-			kk = k;
-			//pause
 
-			//3rd step, velocity correction and swapping field values
-			velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
-
-			swap_3 << <gridD, blockD >> > (ux, vx, uy, vy, C0, C);
-
+			//recovery fields writing
+			if (iter % (tt) == 0 || iter == 1)
+			{
+				M_CROSS.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i);
+			}
 
 
 
-			//4th step, printing resulrs and writing data
-			if (iter % (tt / 10) == 0 || iter == 1) {
-				cout << setprecision(15) << endl;
-				cout << fixed << endl;
-				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
-				velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
-				VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
-
-
-				timer
-				cout << "t= " << tau_h*iter << endl;
-				cout << "Vmax= " << Vmax << endl;
-				cout << "Ek= " << Ek << endl;
-				cout << "dEk= " << abs(Ek - Ek_old) << endl;
-				cout << "p_iter=" << k << endl;
-				cout << "Q_in=" << Q_in  << endl;
-				cout << "Q_out=" << Q_out  << endl;
-				cout << "Vx_max=" << maxval(vx_h, size_l) << endl;
-				cout << "C_max=" << maxval(C_h, size_l) << endl;
-
-				if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width" << endl;
-				integrals << setprecision(20) << fixed;
-				integrals << tau_h*iter << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
-					<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
-					<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
-					<< endl;
 
 
 
-				Ek_old = Ek;
+		} // the end of 4th step
 
 
-				//fields writing
-				if (iter % ( int(each_t * tt)) == 0 || iter == 1)
-				{
-					write_i++;
-					stringstream ss; string file_name;	ss.str(""); ss.clear();
-					ss << write_i;		file_name = ss.str();
-
-					M_CROSS.write_field(C_h, file_name, timeq, each);
-				}
-
-				if (iter % (tt) == 0 || iter ==1)
-				{
-					M_CROSS.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i);
-
-				}
+		if (iter*tau_h > 5000) return 0;
 
 
 
-				
-
-
-			} // the end of 4th step
-
-
-			if (iter*tau_h > 5000) return 0;
-
-
-
-		} //the end of the main time loop
+	} //the end of the main time loop
 
 }
