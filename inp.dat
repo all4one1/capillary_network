@@ -1,0 +1,15 @@
+60 ny_h	// nodes of the pore width
+60 nx_h // nodes of the tube length
+0.1 each_t  // fraction of time to write to a file
+10 each //each #th node to write to a file
+1 Matrix_X    //Nx elements of the porous matrix
+1 Matrix_Y  	//Ny elements of the porous matrix
+20.0e-6;  tau_h
+-0.5  A_h
+4e-4  Ca_h
+0.0  Gr_h 
+1e+4  Pe_h
+1  Re_h;
+0  alpha_h
+1  MM_h 
+10000 blanked value, set zero if you dont want to use tecplot

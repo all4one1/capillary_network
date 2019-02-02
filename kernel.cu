@@ -1114,6 +1114,7 @@ struct multi_cross {
 #endif
 
 
+
 		int l, L;
 		to_file << time << endl;
 		for (int j = 0; j <= nyg; j = j + step) {
@@ -1136,6 +1137,47 @@ struct multi_cross {
 		to_file.close();
 
 	}
+	void write_field_tecplot(double blank, double hx, double hy, double *vx, double *vy, double *p, double *C, double *mu, string file_name, double time, int step, int iter) {
+
+		ofstream to_file;
+		if (iter == 1)
+			to_file.open((file_name + ".dat").c_str());
+		else 
+			to_file.open((file_name + ".dat").c_str(), ofstream::app);
+
+		//make time to be string type
+		stringstream ss; 
+		ss << time; 
+		string str_time = ss.str();
+
+		//count the number of x and y elements
+		unsigned int II = 0, JJ = 0;
+		for (int j = 0; j <= nyg; j = j + step)
+			JJ++;
+		for (int i = 0; i <= nxg; i = i + step)
+			II++;
+
+		to_file << "VARIABLES=\"x\",\"y\",\"C\",\"mu\",\"vx\",\"vy\",\"p\"" << endl;
+		to_file << "ZONE T=\""+str_time+"\", " << "I=" << II << ", J=" << JJ << endl;
+
+		int l, L;
+		//to_file << time << endl;
+		for (int j = 0; j <= nyg; j = j + step) {
+			for (int i = 0; i <= nxg; i = i + step) {
+				l = i + OFFSET*j; L = J[l];
+				if (I[l] == 1) {
+					to_file << hx*i << " " << hy*j << " " << C[L] << " " << mu[L] << " " << vx[L] << " " << vy[L] << " " << p[L] << endl;
+				}
+				else
+				{
+					to_file << hx*i << " " << hy*j << " " << blank << " " << blank << " " << blank << " " << blank << " " << blank << endl;
+				}
+
+			}
+		}
+		//to_file.close();
+	}
+
 
 	//left to be normal
 	void left_normal_in(int first, int last)
@@ -1218,6 +1260,7 @@ struct multi_cross {
 		to_file2.close();
 
 	}
+
 
 	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write) {
 		ifstream from_file("recovery.dat");
@@ -1924,7 +1967,7 @@ int main() {
 	//1 is 'yes' / true, 0 is 'no' / false
 	int picture_switch = 1; //write fields to a file?
 	int read_switch = 1; //read to continue or not? 
-
+	double tecplot = 10000;
 
 	//alternative geometry
 	/*
@@ -1938,11 +1981,11 @@ int main() {
 
 	ny_h = 200;	// nodes of the pore width
 	nx_h = 200;	// nodes of the tube length
-	each_t = 0.1; // fraction of time to write fields to a file
-	each = 1; //each #th node to write to a file
+	each_t = 0.01; // fraction of time to write fields to a file
+	each = 10; //each #th node to write to a file
 	Matrix_X = 1;   //Nx elements of the porous matrix
-	Matrix_Y = 1;	//Ny elements of the porous matrix
-	tau_h = 2.0e-6; 
+	Matrix_Y = 2;	//Ny elements of the porous matrix
+	tau_h = 5.0e-7; 
 	nxout = 1;
 	nyout = 1;
 	A_h = -0.5;
@@ -1952,18 +1995,20 @@ int main() {
 	Re_h = 1;
 	alpha_h = 0;
 	MM_h = 1;
-	hy_h = 1.0 / ny_h;	hx_h = hy_h; 
-	tt = round(1.0 / tau_h);
-	cosA_h = cos(alpha_h*pi / 180);
-	sinA_h = sin(alpha_h*pi / 180);
-	tau_p_h = 0.20*hx_h*hx_h;
-
 
 	//in case if this function is here the default parameters above will be rewritten
 	reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h);
 
 
+	hy_h = 1.0 / ny_h;	hx_h = hy_h;
+	tt = round(1.0 / tau_h);
+	cosA_h = cos(alpha_h*pi / 180);
+	sinA_h = sin(alpha_h*pi / 180);
+	tau_p_h = 0.20*hx_h*hx_h;
+
 	
+
+	//the main class for geometry
 	multi_cross M_CROSS;
 
 	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
@@ -2186,7 +2231,6 @@ int main() {
 			quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 			concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
 		}
-
 		
 		//2nd step, Poisson equation for pressure 
 		{
@@ -2263,22 +2307,29 @@ int main() {
 			Ek_old = Ek;
 
 			//fields writing
-			if (iter % (int(each_t * tt)) == 0 || iter < 10)
+			if (iter % (int(each_t * tt)) == 0 || iter == 1)
 			{
 				write_i++;
 				stringstream ss; string file_name;	ss.str(""); ss.clear();
 				ss << write_i;		file_name = ss.str();
 
-				M_CROSS.write_field(C_h, "C"+ file_name, timeq, each);
+				M_CROSS.write_field(C_h, file_name, timeq, each);
 				//M_CROSS.write_field(vx_h, "vx" + file_name, timeq, each);
 				//M_CROSS.write_field(vy_h, "vy" + file_name, timeq, each);
 				//M_CROSS.write_field(p_h, "p" + file_name, timeq, each);
 				//M_CROSS.write_field(mu_h, "mu" + file_name, timeq, each);
 			}
 
+			//fields writting for stupid tecplot
+			if (tecplot!=0 && (iter % (int(each_t * tt)) == 0 || iter == 1))
+			{
+				M_CROSS.write_field_tecplot(tecplot, hx, hy, vx_h, vy_h, p_h, C_h, mu_h, "fields", timeq, each, iter);
+			}
+
+
 
 			//recovery fields writing
-			if (iter % (tt) == 0 || iter == 1)
+			if (iter % (tt) == 0)
 			{
 				M_CROSS.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i);
 			}
