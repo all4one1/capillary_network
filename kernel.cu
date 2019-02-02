@@ -2323,7 +2323,7 @@ int main() {
 			//fields writting for stupid tecplot
 			if (tecplot!=0 && (iter % (int(each_t * tt)) == 0 || iter == 1))
 			{
-				M_CROSS.write_field_tecplot(tecplot, hx, hy, vx_h, vy_h, p_h, C_h, mu_h, "fields", timeq, each, iter);
+				M_CROSS.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_h, C_h, mu_h, "fields", timeq, each, iter);
 			}
 
 
