@@ -130,6 +130,7 @@ void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, 
 
 }
 
+
 //__device__ double *C, *C0, *ux, *uy, *vx, *vy, *p, *p0, *mu;
 //__device__ multi_cross *Md;
 __constant__ double hx, hy, tau, Lx, Ly, tau_p;
@@ -163,67 +164,67 @@ __global__ void hello() {
 	printf("\n");
 }
 
-__device__ double dx1(unsigned int l, double *f) {
+__device__  double dx1(unsigned int l, double *f) {
 	return 0.5*(f[n3[l]] - f[n1[l]]) / hx;
 }
-__device__ double dy1(unsigned int l, double *f) {
+__device__  double dy1(unsigned int l, double *f) {
 	return 0.5*(f[n2[l]] - f[n4[l]]) / hy;
 }
-__device__ double dx2(unsigned int l, double *f) {
+__device__  double dx2(unsigned int l, double *f) {
 	return (f[n3[l]] - 2.0*f[l] + f[n1[l]]) / hx / hx;
 }
-__device__ double dy2(unsigned int l, double *f) {
+__device__  double dy2(unsigned int l, double *f) {
 	return (f[n2[l]] - 2.0*f[l] + f[n4[l]]) / hy / hy;
 }
 
-__device__ double dx1_eq_0_forward(unsigned int l, double *f) {
+__device__  double dx1_eq_0_forward(unsigned int l, double *f) {
 	return (4.0*f[n3[l]] - f[n3[n3[l]]]) / 3.0;
 }
-__device__ double dx1_eq_0_back(unsigned int l, double *f) {
+__device__  double dx1_eq_0_back(unsigned int l, double *f) {
 	return (4.0*f[n1[l]] - f[n1[n1[l]]]) / 3.0;
 }
-__device__ double dy1_eq_0_up(unsigned int l, double *f) {
+__device__  double dy1_eq_0_up(unsigned int l, double *f) {
 	return (4.0*f[n2[l]] - f[n2[n2[l]]]) / 3.0;
 }
-__device__ double dy1_eq_0_down(unsigned int l, double *f) {
+__device__  double dy1_eq_0_down(unsigned int l, double *f) {
 	return (4.0*f[n4[l]] - f[n4[n4[l]]]) / 3.0;
 }
 
-__device__ double dx1_forward(unsigned int l, double *f) {
+__device__  double dx1_forward(unsigned int l, double *f) {
 	return -0.5*(3.0*f[l] - 4.0*f[n3[l]] + f[n3[n3[l]]]) / hx;
 }
-__device__ double dx1_back(unsigned int l, double *f) {
+__device__  double dx1_back(unsigned int l, double *f) {
 	return  0.5*(3.0*f[l] - 4.0*f[n1[l]] + f[n1[n1[l]]]) / hx;
 }
-__device__ double dy1_up(unsigned int l, double *f) {
+__device__  double dy1_up(unsigned int l, double *f) {
 	return  -0.5*(3.0*f[l] - 4.0*f[n2[l]] + f[n2[n2[l]]]) / hy;
 }
-__device__ double dy1_down(unsigned int l, double *f) {
+__device__  double dy1_down(unsigned int l, double *f) {
 	return  0.5*(3.0*f[l] - 4.0*f[n4[l]] + f[n4[n4[l]]]) / hy;
 }
 
-__device__ double dx2_forward(unsigned int l, double *f) {
+__device__  double dx2_forward(unsigned int l, double *f) {
 	return (2.0 * f[l] - 5.0 * f[n3[l]] + 4.0 * f[n3[n3[l]]] - f[n3[n3[n3[l]]]]) / hx / hx;
 }
-__device__ double dx2_back(unsigned int l, double *f) {
+__device__  double dx2_back(unsigned int l, double *f) {
 	return (2.0 * f[l] - 5.0 * f[n1[l]] + 4.0 * f[n1[n1[l]]] - f[n1[n1[n1[l]]]]) / hx / hx;
 }
-__device__ double dy2_up(unsigned int l, double *f) {
+__device__  double dy2_up(unsigned int l, double *f) {
 	return (2.0 * f[l] - 5.0 * f[n2[l]] + 4.0 * f[n2[n2[l]]] - f[n2[n2[n2[l]]]]) / hy / hy;
 }
-__device__ double dy2_down(unsigned int l, double *f) {
+__device__  double dy2_down(unsigned int l, double *f) {
 	return (2.0 * f[l] - 5.0 * f[n4[l]] + 4.0 * f[n4[n4[l]]] - f[n4[n4[n4[l]]]]) / hy / hy;
 }
 
-__device__ double r_gamma(unsigned int l)
+__device__  double r_gamma(unsigned int l)
 {
 	return (J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA +    //cosA*x
 		(J_back[l] / OFFSET) * hy*sinA;					   //sinA*y
 }
-__device__ double x_gamma(unsigned int l) {
+__device__  double x_gamma(unsigned int l) {
 	return (J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA;    //cosA*x
 }
-__device__ double y_gamma(unsigned int l) {
+__device__  double y_gamma(unsigned int l) {
 	return 	(J_back[l] / OFFSET) * hy*sinA;					   //sinA*y
 }
 
@@ -1236,16 +1237,13 @@ struct multi_cross {
 
 	}
 
-	double permeability() {
-		return 0;
-	}
-	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write) {
+	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write, double timeq) {
 
 		ofstream to_file("recovery.dat");
 		ofstream to_file2("recovery2.dat");
 
-		to_file << i_time << " " << i_write << endl;
-		to_file2 << i_time << " " << i_write << endl;
+		to_file << i_time << " " << i_write << " " << timeq << endl;
+		to_file2 << i_time << " " << i_write << " " << timeq << endl;
 
 
 		for (int i = 0; i < TOTAL_SIZE; i++)
@@ -1261,8 +1259,7 @@ struct multi_cross {
 
 	}
 
-
-	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write) {
+	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write, double &timeq) {
 		ifstream from_file("recovery.dat");
 
 		string str;
@@ -1275,6 +1272,7 @@ struct multi_cross {
 		ss << str;
 		ss >> substr; i_time = atoi(substr.c_str());
 		ss >> substr; i_write = atoi(substr.c_str());
+		ss >> substr; timeq = atof(substr.c_str());
 
 		for (int i = 0; i < TOTAL_SIZE; i++) {
 			getline(from_file, str);
@@ -1905,6 +1903,9 @@ __global__ void stupid_swap(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int
 		J_back[l] = JJ[l];
 	}
 }
+
+//this "stupid" step is designed to keep some objects in the global GPU scope
+//it is supposed to simplify some other parts of the code
 void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsigned int TS) {
 	/*выделение всего того, но на GPU*/
 	unsigned int TSB = TS * sizeof(int);
@@ -1932,6 +1933,98 @@ void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsig
 	cudaFree(J_temp);
 }
 
+//pressure transformation to real pressure
+void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int *n1, int *n2, int *n3, int *n4, int *J_back,
+	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA) {
+	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись, 
+	осознание того, как надо было, пришло потом, когда переписывать заново стало долго*/
+
+	int left, right, up, down, left2, right2, up2, down2;
+
+	for (unsigned int l = 0; l < size; l++) {
+
+		left = n1[l]; right = n3[l]; up = n2[l]; down = n4[l]; 
+		if (left == -1) left = right; 
+		if (right == -1) right = left;
+		if (up == -1) up = down;
+		if (down == -1) down = up;
+		left2 = n1[left]; right2 = n3[right]; up2 = n2[up]; down2 = n4[down];
+
+		p_true[l] = p[l] +
+			(
+			+mu[l] * C[l]
+			- A*pow(C[l], 2) - pow(C[l], 4)
+			+ Gr*(
+				(J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA +    
+				(J_back[l] / OFFSET) * hy*sinA
+			  )					   
+			) / M;
+
+		switch (t[l])
+		{
+		case 0: //inner
+			p_true[l] += -0.5*Ca/M*(
+				pow((0.5*(C[right] - C[left]) / hx),2)  
+				+ pow((0.5*(C[up] - C[down]) / hy),2) );
+			break;
+		case 1: //left rigid
+			p_true[l] += -0.5*Ca / M*(
+				pow((-0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx), 2)
+				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			break;
+		case 2: //upper rigid
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(C[right] - C[left]) / hx), 2)
+				+ pow((0.5*(3.0*C[l] - 4.0*C[down] + C[down2]) / hy), 2));
+			break;
+		case 3: //right rigid
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx), 2)
+				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			break;
+		case 4: //lower rigid
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(C[right] - C[left]) / hx), 2)
+				+ pow((-0.5*(3.0*C[l] - 4.0*C[up] + C[up2]) / hy), 2));
+			break;
+		case 5: //left upper rigid corner
+			p_true[l] += -0.5*Ca / M*(
+				pow((-0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx), 2)
+				+ pow((0.5*(3.0*C[l] - 4.0*C[down] + C[down2]) / hy), 2));
+			break;
+		case 6: //right upper rigid corner
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx), 2)
+				+ pow((0.5*(3.0*C[l] - 4.0*C[down] + C[down2]) / hy), 2));
+			break;
+		case 7: //right lower rigid corner
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx), 2)
+				+ pow((-0.5*(3.0*C[l] - 4.0*C[up] + C[up2]) / hy), 2));
+			break;
+		case 8: //left lower rigid corner
+			p_true[l] += -0.5*Ca / M*(
+				pow((-0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx), 2)
+				+ pow((-0.5*(3.0*C[l] - 4.0*C[up] + C[up2]) / hy), 2));
+			break;
+		case 9: //inlet (from left)
+			p_true[l] += -0.5*Ca / M*(
+				pow((-0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx), 2)
+				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			break;
+		case 10://outlet (to right)
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx), 2)
+				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			break;
+		default:
+			break;
+		}
+		
+	}
+
+}
+
 
 int main() {
 	int devID = 0;
@@ -1956,13 +2049,14 @@ int main() {
 	double timer1, timer2;
 	double pi = 3.1415926535897932384626433832795;
 	double eps0 = 1e-5;
-	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu, *p_true;  //_d - device (GPU) 
+	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;  //_d - device (GPU) 
 	double *C_h, *p_h, *ux_h, *uy_h, *vx_h, *vy_h, *mu_h, *p_true_h;  //_h - host (CPU)
 	double *psiav_array, *psiav_array_h, *psiav_d, *psiav_h, psiav0_h, eps_h;		 //  temporal variables
 	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, m, psiav, psiav0, eps, alpha_h, sinA_h, cosA_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h; //parameters 
 	double Ek, Ek_old, Vmax, Q_in, Q_out, C_average, Cv;
 	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, niter, nout, nxout, nyout, offset_h, kk, k, mx, my, border, tt, write_i = 0, each = 1;					  //parameters
-	double Vxm, Vym, pm, Cm, each_t = 10.0;
+	double Vxm, Vym, pm, Cm, each_t = 10.0, timeq = 0.0;
+	bool copied = false;
 
 	//1 is 'yes' / true, 0 is 'no' / false
 	int picture_switch = 1; //write fields to a file?
@@ -2012,7 +2106,8 @@ int main() {
 	multi_cross M_CROSS;
 
 	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
-	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
+	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB"  << endl;
+	cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl << endl << endl;
 	pause
 	M_CROSS.set_type();
 	//M_CROSS.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
@@ -2096,7 +2191,7 @@ int main() {
 		p_h = (double*)malloc(size_b);		p_true_h = (double*)malloc(size_b);
 		vx_h = (double*)malloc(size_b);		vy_h = (double*)malloc(size_b);
 		psiav_h = (double*)malloc(sizeof(double)); 	psiav_array_h = (double*)malloc(size_b / threads_per_block);
-		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
+		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
 	}
 
 	//allocating memory for arrays on GPU
@@ -2133,7 +2228,7 @@ int main() {
 	//continue
 	if (read_switch == 1) {
 		integrals.open("integrals.dat", std::ofstream::app);
-		M_CROSS.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i);
+		M_CROSS.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
 	}
 
 	//from the start
@@ -2185,8 +2280,7 @@ int main() {
 	hello << <1, 1 >> > ();
 	cudaDeviceSynchronize();
 
-	
-	double timeq = 0.0; //just time in the double precision format
+
 	Ek = 0; Ek_old = 0; 
 	kk = 1000000; //Poisson iteration limit 
 
@@ -2198,7 +2292,7 @@ int main() {
 	timer1 = clock() / CLOCKS_PER_SEC;
 
 
-	M_CROSS.write_field(C_h, "test", 0, 1);
+	//M_CROSS.write_field(C_h, "test", 0, 1);
 
 	//write the file with parameters
 	//this step was written for making movies
@@ -2216,6 +2310,13 @@ int main() {
 	to_file.close();
 	}
 
+
+
+
+
+
+
+	true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
 	
 
 	// the main time loop of the whole calculation procedure
@@ -2259,10 +2360,6 @@ int main() {
 		kk = k;
 		//cout << "p_iter=" << k << endl;
 		
-
-
-
-
 		//3rd step, velocity correction and swapping field values
 		velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
 
@@ -2280,6 +2377,10 @@ int main() {
 			cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 			cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 			cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+			copied = true;
+
+			true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
+				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
 
 			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
@@ -2299,47 +2400,72 @@ int main() {
 
 			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width" << endl;
 			integrals << setprecision(20) << fixed;
-			integrals << tau_h*iter << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
+			integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
 				<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
 				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
 				<< endl;
 
 			Ek_old = Ek;
+		}
 
-			//fields writing
-			if (iter % (int(each_t * tt)) == 0 || iter == 1)
-			{
-				write_i++;
-				stringstream ss; string file_name;	ss.str(""); ss.clear();
-				ss << write_i;		file_name = ss.str();
 
-				M_CROSS.write_field(C_h, file_name, timeq, each);
-				//M_CROSS.write_field(vx_h, "vx" + file_name, timeq, each);
-				//M_CROSS.write_field(vy_h, "vy" + file_name, timeq, each);
-				//M_CROSS.write_field(p_h, "p" + file_name, timeq, each);
-				//M_CROSS.write_field(mu_h, "mu" + file_name, timeq, each);
+		//fields writing
+		if (iter % (int(each_t * tt)) == 0 || iter == 1)
+		{
+			if (copied == false) {
+				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+				true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
+					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
+				copied = true;
 			}
+			write_i++;
+			stringstream ss; string file_name;	ss.str(""); ss.clear();
+			ss << write_i;		file_name = ss.str();
 
-			//fields writting for stupid tecplot
-			if (tecplot!=0 && (iter % (int(each_t * tt)) == 0 || iter == 1))
-			{
-				M_CROSS.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_h, C_h, mu_h, "fields", timeq, each, iter);
+			M_CROSS.write_field(p_true_h, file_name, timeq, each);
+			//M_CROSS.write_field(vx_h, "vx" + file_name, timeq, each);
+			//M_CROSS.write_field(vy_h, "vy" + file_name, timeq, each);
+			//M_CROSS.write_field(p_h, "p" + file_name, timeq, each);
+			//M_CROSS.write_field(mu_h, "mu" + file_name, timeq, each);
+		}
+
+		//fields writting for stupid tecplot
+		if (tecplot!=0 && (iter % (int(each_t * tt)) == 0 || iter == 1))
+		{
+			if (copied == false) {
+				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+				true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
+					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
+				copied = true;
 			}
+			M_CROSS.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
+		}
 
 
 
-			//recovery fields writing
-			if (iter % (tt) == 0)
-			{
-				M_CROSS.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i);
+		//recovery fields writing
+		if (iter % (tt) == 0)
+		{
+			if (copied == false) {
+				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+				copied = true;
 			}
-
-
-
-
-
-
-		} // the end of 4th step
+			M_CROSS.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
+		}
+		copied = false;
+		 // the end of 4th step
 
 
 		if (iter*tau_h > 5000) return 0;
