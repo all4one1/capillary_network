@@ -774,6 +774,16 @@ struct multi_cross {
 	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;
 	double LX, LY;
 
+	//integer global inxed i
+	unsigned int iG(unsigned int l) {
+		return 	(J_back[l] - (J_back[l] / OFFSET)*OFFSET);
+	}
+	//integer global index j
+	unsigned int jG(unsigned int l) {
+		return 	(J_back[l] / OFFSET);
+	}
+
+
 	void set_global_size(int input_nx, int input_ny, int input_Mx, int input_My) {
 
 		Mx = input_Mx - 1; My = input_My - 1; Msize = input_Mx*input_My; Moffset = input_Mx;
@@ -1288,7 +1298,12 @@ struct multi_cross {
 		from_file.close();
 	}
 
+	void linear_pressure(double *p, double hx, double hy, double cosA, double sinA, double Lx, double Ly, double coefficient = 1) {
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			p[l] = coefficient*( (Lx - hx*iG(l))*cosA -  (Ly - hy*jG(l))*sinA);
+		}
 
+	}
 
 };
 
@@ -2194,6 +2209,9 @@ int main() {
 		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
 	}
 
+	M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8*Lx_h/Re_h);
+
+
 	//allocating memory for arrays on GPU
 	{
 		cudaMalloc((void**)&C, size_b); 	cudaMalloc((void**)&C0, size_b);
@@ -2309,7 +2327,6 @@ int main() {
 		<< endl;
 	to_file.close();
 	}
-
 
 
 
