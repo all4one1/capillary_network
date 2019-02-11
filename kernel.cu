@@ -1,4 +1,7 @@
-﻿#include "cuda_runtime.h"
+﻿#define PHASE
+//#define FICK
+//#define DIFFUSION
+#include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>
 #include <iostream> 
@@ -99,12 +102,58 @@ void VFR(double *vx, int *t, unsigned int size, double hy, double &Q_in, double 
 			C_average += C[i];
 			Cv += vx[i] * C[i];
 		}
+
+
+
+
 	}
 	Q_in = Q_in*hy;
 	Q_out = Q_out*hy;
 	C_average = C_average*hy/(1.0-hy);
 	Cv = Cv*hy;
 }
+
+
+void C_statistics(unsigned int size, double hx, double hy, int *t, double *C, double &C_av, double &C_plus, double &C_minus) {
+	C_av = 0; C_plus = 0; C_minus = 0;
+	unsigned int n = 0, n2 = 0, n_plus = 0, n2_plus = 0, n_minus = 0, n2_minus = 0;
+
+	for (unsigned int l = 0; l < size; l++) {
+		if (t[l] == 0) {
+			C_av += C[l];
+			n++;
+			if (C[l] > 0) {
+				C_plus += C[l];
+				n_plus++;
+			}
+			if (C[l] < 0) {
+				C_minus += C[l];
+				n_minus++;
+			}
+		}
+
+		else
+		{
+			C_av += C[l] / 2;
+			n2++;
+			if (C[l] > 0) {
+				C_plus += C[l] / 2;
+				n2_plus++;
+			}
+			if (C[l] < 0) {
+				C_minus += C[l] / 2;
+				n2_minus++;
+			}
+		}
+	}
+
+	C_av /= (n + 0.5*n2);
+	C_plus /= (n_plus + 0.5*n2_plus);
+	C_minus /= (n_minus + 0.5*n2_minus);
+
+}
+
+
 
 void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, unsigned int &each, unsigned int &Matrix_X, unsigned int &Matrix_Y, double &tau_h, double &A_h, double &Ca_h, double &Gr_h, double &Pe_h, double &Re_h, double &alpha_h, double &MM_h) {
 
@@ -2070,7 +2119,7 @@ int main() {
 	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, m, psiav, psiav0, eps, alpha_h, sinA_h, cosA_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h; //parameters 
 	double Ek, Ek_old, Vmax, Q_in, Q_out, C_average, Cv;
 	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, niter, nout, nxout, nyout, offset_h, kk, k, mx, my, border, tt, write_i = 0, each = 1;					  //parameters
-	double Vxm, Vym, pm, Cm, each_t = 10.0, timeq = 0.0;
+	double Vxm, Vym, pm, Cm, each_t = 10.0, timeq = 0.0, C_av, C_plus, C_minus;
 	bool copied = false;
 
 	//1 is 'yes' / true, 0 is 'no' / false
@@ -2209,8 +2258,7 @@ int main() {
 		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
 	}
 
-	M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8*Lx_h/Re_h);
-
+	M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0*Lx_h/Re_h);
 
 	//allocating memory for arrays on GPU
 	{
@@ -2349,7 +2397,7 @@ int main() {
 			quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 			concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
 		}
-		
+	
 		//2nd step, Poisson equation for pressure 
 		{
 			eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
@@ -2401,6 +2449,7 @@ int main() {
 
 			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
+			C_statistics(M_CROSS.TOTAL_SIZE, hx_h, hy_h, M_CROSS.t, C_h, C_av, C_plus, C_minus);
 
 
 			timer
@@ -2414,12 +2463,16 @@ int main() {
 			cout << "Vx_max=" << maxval(vx_h, size_l) << endl;
 			cout << "C_max=" << maxval(C_h, size_l) << endl;
 			cout << "p_max=" << maxval(p_h, size_l) << endl;
+			cout << "C_av=" << C_av << endl;
+			cout << "C_plus=" << C_plus << endl;
+			cout << "C_minus=" << C_minus << endl;
 
-			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width" << endl;
+			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus" << endl;
 			integrals << setprecision(20) << fixed;
 			integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
 				<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
 				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
+				<< " " << C_av << " " << C_plus << " " << C_minus
 				<< endl;
 
 			Ek_old = Ek;
