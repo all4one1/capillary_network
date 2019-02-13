@@ -147,9 +147,9 @@ void C_statistics(unsigned int size, double hx, double hy, int *t, double *C, do
 		}
 	}
 
-	C_av /= (n + 0.5*n2);
-	C_plus /= (n_plus + 0.5*n2_plus);
-	C_minus /= (n_minus + 0.5*n2_minus);
+	if (n + n2 > 0) C_av /= (n + 0.5*n2);
+	if (n_plus + n2_plus > 0) C_plus /= (n_plus + 0.5*n2_plus);
+	if (n_minus + n2_minus > 0) C_minus /= (n_minus + 0.5*n2_minus);
 
 }
 
@@ -2258,7 +2258,7 @@ int main() {
 		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
 	}
 
-	M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0/Re_h);
+	//M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0/Re_h);
 
 	//allocating memory for arrays on GPU
 	{
