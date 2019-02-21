@@ -1,6 +1,4 @@
-﻿#define PHASE
-//#define FICK
-//#define DIFFUSION
+﻿
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>
@@ -155,7 +153,7 @@ void C_statistics(unsigned int size, double hx, double hy, int *t, double *C, do
 
 
 
-void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, unsigned int &each, unsigned int &Matrix_X, unsigned int &Matrix_Y, double &tau_h, double &A_h, double &Ca_h, double &Gr_h, double &Pe_h, double &Re_h, double &alpha_h, double &MM_h) {
+void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, unsigned int &each, unsigned int &Matrix_X, unsigned int &Matrix_Y, double &tau_h, double &A_h, double &Ca_h, double &Gr_h, double &Pe_h, double &Re_h, double &alpha_h, double &MM_h, double &tecplot, unsigned int &PHASE_h) {
 
 	ifstream read; string str, substr; stringstream ss;
 	read.open("inp.dat");
@@ -172,9 +170,11 @@ void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, 
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; Gr_h = atof(substr.c_str());
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; Pe_h = atof(substr.c_str());
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; Re_h = atof(substr.c_str());
-	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; alpha_h = atof(substr.c_str());
-	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; MM_h = atof(substr.c_str());
-
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; alpha_h = atof(substr.c_str()); 	
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; MM_h = atof(substr.c_str()); 
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; tecplot = atof(substr.c_str());
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; PHASE_h = atoi(substr.c_str()); 
+	
 	read.close();
 
 }
@@ -192,6 +192,7 @@ __constant__ int Mx, My, Msize, Moffset, OFFSET;
 __constant__ unsigned int iter;
 __constant__ unsigned int TOTAL_SIZE;
 __constant__ unsigned int nxg, nyg;
+__constant__ unsigned int PHASE;
 __device__ int *n1, *n2, *n3, *n4, *t, *J_back;
 
 
@@ -209,7 +210,8 @@ __global__ void hello() {
 	printf("offset= %i  \n", offset);
 	printf("sinA= %f cosA=%f \n", sinA, cosA);
 	printf("Total number of nodes = %i \n", TOTAL_SIZE);
-
+	if (PHASE == 1) printf("Phase field \n");
+	if (PHASE == 0) printf("Single phase flow \n");
 	printf("\n");
 }
 
@@ -600,14 +602,14 @@ __global__ void Poisson(double *p, double *p0, double *ux, double *uy, double *m
 			break;
 		case 9: //inlet (from left)
 			p[l] = 8.0 / Re*Lx
-				+(0.5*Ca*pow(dx1_forward(l, C), 2)
+				+ PHASE*(0.5*Ca*pow(dx1_forward(l, C), 2)
 				 -mu[l] * C[l]
 				+ A*pow(C[l], 2) + pow(C[l], 4)
 				- Gr*C[l] * r_gamma(l)) / MM;
 			break;
 		case 10://outlet (to right)
 			p[l] = 0
-				+(0.5*Ca*pow(dx1_back(l, C), 2) 
+				+ PHASE*(0.5*Ca*pow(dx1_back(l, C), 2)
 				 -mu[l] * C[l]
 				+ A*pow(C[l], 2) + pow(C[l], 4)
 				- Gr*C[l] * r_gamma(l)) / MM;
@@ -1999,13 +2001,17 @@ void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsig
 
 //pressure transformation to real pressure
 void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int *n1, int *n2, int *n3, int *n4, int *J_back,
-	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA) {
+	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA, unsigned int PHASE) {
 	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись, 
 	осознание того, как надо было, пришло потом, когда переписывать заново стало долго*/
 
 	int left, right, up, down, left2, right2, up2, down2;
 
 	for (unsigned int l = 0; l < size; l++) {
+		if (PHASE == 0) {
+			p_true[l] = p[l];
+			continue;
+		}
 
 		left = n1[l]; right = n3[l]; up = n2[l]; down = n4[l]; 
 		if (left == -1) left = right; 
@@ -2121,6 +2127,7 @@ int main() {
 	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, niter, nout, nxout, nyout, offset_h, kk, k, mx, my, border, tt, write_i = 0, each = 1;					  //parameters
 	double Vxm, Vym, pm, Cm, each_t = 10.0, timeq = 0.0, C_av, C_plus, C_minus;
 	bool copied = false;
+	unsigned int PHASE_h = 1;
 
 	//1 is 'yes' / true, 0 is 'no' / false
 	int picture_switch = 1; //write fields to a file?
@@ -2143,7 +2150,7 @@ int main() {
 	each = 10; //each #th node to write to a file
 	Matrix_X = 1;   //Nx elements of the porous matrix
 	Matrix_Y = 2;	//Ny elements of the porous matrix
-	tau_h = 5.0e-7; 
+	tau_h = 5.0e-5; 
 	nxout = 1;
 	nyout = 1;
 	A_h = -0.5;
@@ -2155,8 +2162,8 @@ int main() {
 	MM_h = 1;
 
 	//in case if this function is here the default parameters above will be rewritten
-	reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h);
-
+	reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
+	cout << "PHASE= " << PHASE_h << endl;
 
 	hy_h = 1.0 / ny_h;	hx_h = hy_h;
 	tt = round(1.0 / tau_h);
@@ -2340,6 +2347,7 @@ int main() {
 //		cudaMemcpyToSymbol(Msize, &M_CROSS.Msize, sizeof(int), 0, cudaMemcpyHostToDevice);
 //		cudaMemcpyToSymbol(Moffset, &M_CROSS.Moffset, sizeof(int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(TOTAL_SIZE, &M_CROSS.TOTAL_SIZE, sizeof(int), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(PHASE, &PHASE_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
 	}
 
 	//just printing parameters from GPU to be confident they are passed correctly 
@@ -2381,7 +2389,7 @@ int main() {
 
 
 
-	true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
+	true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 	
 
 	// the main time loop of the whole calculation procedure
@@ -2393,9 +2401,15 @@ int main() {
 
 		//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
 		{
-			chemical_potential << <gridD, blockD >> > (mu, C);
+			if (PHASE_h == 1) 
+				chemical_potential << <gridD, blockD >> > (mu, C);
+
 			quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-			concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+
+			if (PHASE_h == 1)
+				concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+			else if (PHASE_h == 0 )
+				concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
 		}
 	
 		//2nd step, Poisson equation for pressure 
@@ -2445,7 +2459,7 @@ int main() {
 			copied = true;
 
 			true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
-				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
+				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 
 			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
@@ -2489,14 +2503,14 @@ int main() {
 				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 				true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
-					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
+					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 				copied = true;
 			}
 			write_i++;
 			stringstream ss; string file_name;	ss.str(""); ss.clear();
 			ss << write_i;		file_name = ss.str();
 
-			M_CROSS.write_field(p_true_h, file_name, timeq, each);
+			M_CROSS.write_field(C_h, file_name, timeq, each);
 			//M_CROSS.write_field(vx_h, "vx" + file_name, timeq, each);
 			//M_CROSS.write_field(vy_h, "vy" + file_name, timeq, each);
 			//M_CROSS.write_field(p_h, "p" + file_name, timeq, each);
@@ -2513,7 +2527,7 @@ int main() {
 				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 				true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
-					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h);
+					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 				copied = true;
 			}
 			M_CROSS.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
