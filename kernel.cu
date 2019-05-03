@@ -508,6 +508,65 @@ __global__ void concentration(double *C, double *C0, double *vx, double *vy, dou
 
 }
 
+__global__ void concentration_no_input_C(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-vx[l] * dx1(l, C0)
+					- vy[l] * dy1(l, C0)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			C[l] = dx1_eq_0_forward(l, C0);
+			break;
+		case 2: //upper rigid
+			C[l] = dy1_eq_0_down(l, C0);
+			break;
+		case 3: //right rigid
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		case 4: //lower rigid
+			C[l] = dy1_eq_0_up(l, C0);
+			break;
+		case 5: //left upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) + dy1_eq_0_down(l, C0));
+			break;
+		case 6: //right upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + dy1_eq_0_down(l, C0));
+			break;
+		case 7: //right lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + dy1_eq_0_up(l, C0));
+			break;
+		case 8: //left lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) + dy1_eq_0_up(l, C0));
+			break;
+		case 9: //inlet (from left)
+			C[l] = 0.5;  dx1_eq_0_forward(l, C0);
+			break;
+		case 10://outlet (to right)
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+
 __global__ void velocity_correction(double *vx, double *vy, double *ux, double *uy, double *p) {
 
 	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
@@ -1946,7 +2005,123 @@ struct box {
 
 	};
 
+struct box_inherited:multi_cross
+{
+	unsigned int nx, ny, offset;
 
+	void set_global_size(int input_nx, int input_ny) {
+		nx = input_nx; nxg = nx;
+		ny = input_ny; nyg = ny;
+		offset = nx + 1;
+		OFFSET = offset;
+		TOTAL_SIZE = (input_nx + 1) * (input_ny + 1);
+	}
+	void set_type() {
+		l = new int[TOTAL_SIZE];
+		t = new int[TOTAL_SIZE];
+		for (int i = 0; i < TOTAL_SIZE; i++) {
+			l[i] = 0;
+			t[i] = 0;
+		}
+
+		unsigned int k;
+		for (int i = 0; i <= nx; i++) {
+			for (int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (i == 0) t[k] = 9;
+				if (i == nx) t[k] = 10;
+				if (j == 0) t[k] = 4;
+				if (j == ny) t[k] = 2;
+
+				iter++;
+
+
+			}
+		}
+
+	}
+
+	void set_neighbor()
+	{
+
+
+		n1 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		for (int i = 0; i < TOTAL_SIZE; i++) {
+			n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
+		}
+
+		unsigned int k, it = 0;
+		for (int i = 0; i <= nx; i++) {
+			for (int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (t[k] == 0) {
+					n1[k] = k - 1;
+					n2[k] = k + offset;
+					n3[k] = k + 1;
+					n4[k] = k - offset;
+				}
+
+				if (t[k] == 2) 	n4[k] = k - offset;
+				if (t[k] == 4)  n2[k] = k + offset;
+				if (t[k] == 9) {
+					n3[k] = k + 1;
+					n4[k] = k - offset;
+					n2[k] = k + offset;
+				}
+				if (t[k] == 10) {
+					n1[k] = k - 1;
+					n4[k] = k - offset;
+					n2[k] = k + offset;
+				}
+
+				it++;
+			}
+		}
+
+
+
+	}
+
+	void set_global_id() {
+
+
+		I = new int[(nx + 1)*(ny + 1)];
+		J = new int[(nx + 1)*(ny + 1)];
+		J_back = new int[TOTAL_SIZE];
+
+		OFFSET = nx + 1;
+
+
+		for (unsigned int i = 0; i < (nx + 1)*(ny + 1); i++) {
+			I[i] = 0; J[i] = -1;
+		}
+		for (int i = 0; i < TOTAL_SIZE; i++) {
+			J_back[i] = -1;
+		}
+
+
+
+		unsigned int k, it = 0, in, ii, jj;
+		for (int i = 0; i <= nx; i++) {
+			for (int j = 0; j <= ny; j++) {
+
+				k = i + offset*j;
+				I[k] = 1;
+				J[k] = k;
+				J_back[k] = k;
+
+				it++;
+
+			}
+		}
+
+
+	}
+
+};
 
 __global__ void stupid_alloc(unsigned int TS) {
 	n1 = new int[TS];
@@ -2163,7 +2338,6 @@ int main() {
 
 	//in case if this function is here the default parameters above will be rewritten
 	reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
-	cout << "PHASE= " << PHASE_h << endl;
 
 	hy_h = 1.0 / ny_h;	hx_h = hy_h;
 	tt = round(1.0 / tau_h);
@@ -2174,8 +2348,10 @@ int main() {
 	
 
 	//the main class for geometry
-	multi_cross M_CROSS;
+	//multi_cross M_CROSS;
 
+
+	/*
 	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
 	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB"  << endl;
 	cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl << endl << endl;
@@ -2185,17 +2361,18 @@ int main() {
 	//M_CROSS.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
 	M_CROSS.set_neighbor();
 	M_CROSS.set_global_id();
-	
+	*/
 
-	/*
-	box M_CROSS;
+
+	
+	box_inherited M_CROSS;
 	M_CROSS.set_global_size(nx_h, ny_h);
 	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
 	//pause
 	M_CROSS.set_type();
 	M_CROSS.set_neighbor();
 	M_CROSS.set_global_id();
-	*/
+	
 
 
 	//here we copy the arrays responsible for the geometry to GPU
@@ -2408,8 +2585,11 @@ int main() {
 
 			if (PHASE_h == 1)
 				concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
-			else if (PHASE_h == 0 )
+			else if (PHASE_h == 0) {
+				//if (timeq < 1)
 				concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
+				//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
+			}
 		}
 	
 		//2nd step, Poisson equation for pressure 
