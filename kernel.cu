@@ -1415,6 +1415,44 @@ struct multi_cross {
 
 	}
 
+	//C0(qx,qy)=0.5d0*dtanh((qx*hx-0.5d0)/delta)
+	void fill_gradually(double *C, double hx, double hy, double delta) {
+		unsigned int i, j;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			i = iG(l); 	j = jG(l);
+			C[l] = 0.5*tanh((i*hx - 0.5) / delta);
+		}
+	}
+
+	void fast_test_writing(double *f) {
+
+		ofstream to_file("test_field.dat");
+
+
+		to_file << "i, j, f" << endl;
+
+		int l, L;
+
+	for (int j = 0; j <= nyg; j = j++) {
+		for (int i = 0; i <= nxg; i = i++) {
+		l = i + OFFSET*j; L = J[l];
+
+		if (I[l] == 1) {
+			to_file << i << " " << j << " " << f[L] << endl;
+		}
+		else
+		{
+			to_file << "skip" << endl;
+		}
+
+	}
+}
+
+
+		to_file.close();
+	}
+
+
 };
 
 struct multi_line {
@@ -2348,10 +2386,10 @@ int main() {
 	
 
 	//the main class for geometry
-	//multi_cross M_CROSS;
+	
 
 
-	/*
+	multi_cross M_CROSS;
 	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
 	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB"  << endl;
 	cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl << endl << endl;
@@ -2361,10 +2399,10 @@ int main() {
 	//M_CROSS.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
 	M_CROSS.set_neighbor();
 	M_CROSS.set_global_id();
-	*/
-
-
 	
+
+
+	/*
 	box_inherited M_CROSS;
 	M_CROSS.set_global_size(nx_h, ny_h);
 	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
@@ -2372,7 +2410,7 @@ int main() {
 	M_CROSS.set_type();
 	M_CROSS.set_neighbor();
 	M_CROSS.set_global_id();
-	
+	*/
 
 
 	//here we copy the arrays responsible for the geometry to GPU
@@ -2443,6 +2481,10 @@ int main() {
 	}
 
 	//M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0/Re_h);
+
+	double delta = sqrt(Ca_h / 0.5);
+	M_CROSS.fill_gradually(C_h,hx_h,hy_h,delta);
+
 
 	//allocating memory for arrays on GPU
 	{
@@ -2534,6 +2576,22 @@ int main() {
 
 	Ek = 0; Ek_old = 0; 
 	kk = 1000000; //Poisson iteration limit 
+
+
+
+
+
+
+
+
+	M_CROSS.fast_test_writing(C_h);
+
+
+
+
+
+
+
 
 	pause
 
