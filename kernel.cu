@@ -2923,7 +2923,7 @@ int main() {
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
 			C_statistics(M_CROSS.TOTAL_SIZE, hx_h, hy_h, M_CROSS.t, C_h, C_av, C_plus, C_minus);
 			len = M_CROSS.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);
-			ten = M_CROSS.tension(hx_h, hy_h, C_h);
+			ten = Ca_h / len * M_CROSS.tension(hx_h, hy_h, C_h);
 			vol = M_CROSS.volume(hx_h, hy_h, C_h, 0.2);
 			width = vol / len;
 
