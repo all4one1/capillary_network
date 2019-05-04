@@ -1452,6 +1452,215 @@ struct multi_cross {
 		to_file.close();
 	}
 
+	double isoline(double hx, double hy, double *C, signed char *mark, double *fx, double *fy, double val) {
+		//integer, intent(in) ::nx, ny
+		//	real * 8, intent(in) ::Lx, C(0:nx, 0 : ny), val
+		//real * 8, intent(inout)	::fx(0:nx - 1, 0 : ny), fy(0:nx, 0 : ny - 1)
+		//integer, intent(inout)	::mark(0:nx, 0 : ny)
+		//integer qx, qy, i, j
+		//real * 8 hx, hy, len
+		//real(8), parameter::nan = transfer(-2251799813685248_int64, 1._real64)
+
+
+		double len = 0;
+		double nan = NAN;
+		unsigned int i, j, ii, jj;
+		unsigned int lr, lu, lru; //l right, up and right-up
+
+		for (int l = 0; l < TOTAL_SIZE; l++){
+			fx[l] = nan;
+			fy[l] = nan;
+		}
+		int l = 0;
+
+
+		for (int l = 0; l < TOTAL_SIZE; l++) {
+				if (C[l] < val)
+					mark[l] = -1;
+				else if (C[l] > val)
+					mark[l] = +1;
+				else
+					mark[l] = 0;
+		}
+
+		for (int l = 0; l < TOTAL_SIZE; l++) {
+			i = iG(l); 	j = jG(l);
+
+			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
+
+			ii = iG(n3[l]); jj = jG(n2[l]);
+
+			lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
+
+				if (abs(mark[l] + mark[lr] + mark[lu] + mark[lru]) == 4)
+					continue;
+				else {
+					//case a
+
+					//************
+					//************
+					//************
+					//************
+					//−−−−−−−−−−−−
+
+					if (mark[l] == 0 && mark[lr] == 0) {
+						fy[l] = hy*j;
+						fy[lr] = hy*j;
+
+						len = len + hx;
+						continue;
+					}
+
+					//case b
+
+					//| ***********
+					//| ***********
+					//| ***********
+					//| ***********
+					//| ***********
+
+					if (mark[l] == 0 && mark[lu] == 0) {
+						fx[l] = hx*i;
+						fx[lu] = hx*i;
+
+						len = len + hy;
+						continue;
+					}
+
+					//case 1
+
+					//************
+					//************
+					//−−−−−−−−−−−−
+					//************
+					//************
+
+					if (mark[l]*mark[lu] <= 0 && mark[lr]*mark[lru] <= 0 && mark[l]*mark[lu] + mark[lr]*mark[lru] != 0) {
+
+						fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j;  //left
+						fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
+
+						len = len + sqrt(hx*hx + pow(fy[lr] - fy[l], 2));
+						continue;
+					}
+
+					//case 2
+
+					//***** | ******
+					//***** | ******
+					//***** | ******
+					//***** | ******
+					//***** | ******
+
+					if (mark[l]*mark[lr] <= 0 && mark[lu]*mark[lru] <= 0 && mark[l]*mark[lr] + mark[lu]*mark[lru] != 0) {
+						fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
+						fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
+
+						len = len + sqrt(pow(fx[lu] - fx[l], 2) + hy*hy);
+						continue;
+					}
+
+					//case 3
+
+					//***** | ******
+					//***** | ******
+					//−−−−−−******
+					//************
+					//************
+
+					if (mark[l]*mark[lu] <= 0 && mark[lu]*mark[lru] <= 0 && mark[l]*mark[lu] + mark[lu]*mark[lru] != 0) {
+						fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
+						fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j;  //left
+
+						len = len + sqrt(pow(fx[lu] - hx*i, 2) + pow(fy[l] - hy*(jj),2));
+						continue;
+					}
+
+					//case 4
+
+					//***** | ******
+					//***** | ******
+					//*****−−−−−−−
+					//************
+					//************
+
+					if (mark[lr]*mark[lru] <= 0 && mark[lu]*mark[lru] <= 0 && mark[lr]*mark[lru] + mark[lu]*mark[lru] != 0) {
+						fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
+						fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
+
+						len = len + sqrt(pow(fx[lu] - hx*(ii),2) + pow(fy[lr] - hy*(jj),2));
+						continue;
+					}
+
+					//case 5
+
+					//************
+					//************
+					//******−−−−−−
+					//***** | ******
+					//***** | ******
+
+					if (mark[l]*mark[lr] <= 0 && mark[lr]*mark[lru] <= 0 && mark[l]*mark[lr] + mark[lr]*mark[lru] != 0) {
+						fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
+						fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
+
+						len = len + sqrt(pow(fx[l] - hx*(ii),2) + pow(fy[lr] - hy*j,2));
+						continue;
+					}
+
+					//case 6
+
+					//************
+					//************
+					//−−−−−−******
+					//***** | ******
+					//***** | ******
+
+					if (mark[l]*mark[lr] <= 0 && mark[l]*mark[lu] <= 0 && mark[l]*mark[lr] + mark[l]*mark[lu] != 0) {
+						fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j; //left
+						fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
+
+						len = len + sqrt(pow(fx[l] - hx*i, 2) +  pow(fy[l] - hy*j, 2));
+						continue;
+					}
+
+
+
+
+				}//end of main if
+
+
+			}
+		
+		return len;
+
+	}
+
+	double volume(double hx, double hy, double *C, double lim) {
+		double vol = 0;
+		unsigned int i, j;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
+			if (abs(C[l]) < lim)
+				vol += hx*hy;
+		}
+
+		return vol;
+	}
+
+	double tension(double hx, double hy, double *C) {
+		double ten = 0;
+		unsigned int lr, lu, lru;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
+
+			lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
+
+			ten += 0.25 / hx / hx*pow(C[n3[l]] - C[n1[l]], 2) + 0.25 / hy / hy*pow(C[n2[l]] - C[n4[l]], 2);
+		}
+
+		return ten;
+	}
 
 };
 
@@ -2480,6 +2689,16 @@ int main() {
 		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
 	}
 
+	//additional allocation on CPU for statistics if necessary
+	double *fx, *fy; signed char *mark;
+	{
+		fx = (double*)malloc(sizeof(double)*size_l);
+		fy = (double*)malloc(sizeof(double)*size_l);
+		mark = (signed char*)malloc(sizeof(signed char)*size_l);
+	}
+
+
+
 	//M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0/Re_h);
 
 	double delta = sqrt(Ca_h / 0.5);
@@ -2699,10 +2918,14 @@ int main() {
 			true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
 				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 
+			double len, ten, vol, width;
 			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
 			C_statistics(M_CROSS.TOTAL_SIZE, hx_h, hy_h, M_CROSS.t, C_h, C_av, C_plus, C_minus);
-
+			len = M_CROSS.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);
+			ten = M_CROSS.tension(hx_h, hy_h, C_h);
+			vol = M_CROSS.volume(hx_h, hy_h, C_h, 0.2);
+			width = vol / len;
 
 			timer
 			cout << "t= " << tau_h*iter << endl;
@@ -2719,12 +2942,13 @@ int main() {
 			cout << "C_plus=" << C_plus << endl;
 			cout << "C_minus=" << C_minus << endl;
 
-			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus" << endl;
+			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width" << endl;
 			integrals << setprecision(20) << fixed;
 			integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
 				<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
 				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
 				<< " " << C_av << " " << C_plus << " " << C_minus
+				<< " " << len << " " << ten << " "  << width 
 				<< endl;
 
 			Ek_old = Ek;
