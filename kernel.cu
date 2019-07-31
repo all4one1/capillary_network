@@ -2701,8 +2701,8 @@ int main() {
 
 	//M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0/Re_h);
 
-	double delta = sqrt(Ca_h / 0.5);
-	M_CROSS.fill_gradually(C_h,hx_h,hy_h,delta);
+	//double delta = sqrt(Ca_h / 0.5);
+	//M_CROSS.fill_gradually(C_h,hx_h,hy_h,delta);
 
 
 	//allocating memory for arrays on GPU
@@ -2803,7 +2803,7 @@ int main() {
 
 
 
-	M_CROSS.fast_test_writing(C_h);
+	//M_CROSS.fast_test_writing(C_h);
 
 
 
