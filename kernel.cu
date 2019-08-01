@@ -1487,7 +1487,7 @@ struct multi_cross {
 			i = iG(l); 	j = jG(l);
 
 			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
-
+			if (t[n2[l]] == 10 || t[n4[l]] == 10) continue;
 			ii = iG(n3[l]); jj = jG(n2[l]);
 
 			lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
