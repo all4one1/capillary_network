@@ -851,6 +851,26 @@ struct cross
 		}
 	};
 
+	__host__ __device__ void set_geometry_narrow_tubes(unsigned int L, /*length of horizontal tube*/
+		unsigned int H, /*length(height) of vertical tube*/
+		unsigned int D /*diameter(width) of tube*/)
+	{
+		nx[0] = D; ny[0] = D;
+		nx[1] = L - 1; ny[1] = D;
+		nx[2] = D; ny[2] = H - 1;
+		nx[3] = L - 1; ny[3] = D;
+		nx[4] = D; ny[4] = H - 1;
+
+		total_size = 0;
+		for (int i = 0; i < 5; i++)
+		{
+			size[i] = (nx[i] + 1)*(ny[i] + 1);
+			offset[i] = nx[i] + 1;
+			total_size += size[i];
+		}
+	}
+
+
 	__host__ __device__ void delete_block(int i)
 	{
 		total_size -= size[i];
@@ -919,31 +939,34 @@ struct multi_cross {
 			Mcr[i].set_block(TOTAL_SIZE);
 			TOTAL_SIZE += Mcr[i].total_size;
 		}
-
-		/*
-		C = new double[TOTAL_SIZE];
-		C0 = new double[TOTAL_SIZE];
-		ux = new double[TOTAL_SIZE];
-		uy = new double[TOTAL_SIZE];
-		vx = new double[TOTAL_SIZE];
-		vy = new double[TOTAL_SIZE];
-		p = new double[TOTAL_SIZE];
-		p0 = new double[TOTAL_SIZE];
-		mu = new double[TOTAL_SIZE];
-
-		for (int i = 0; i < TOTAL_SIZE; i++) {
-			C[i] = 0;
-			C0[i] = 0;
-			p[i] = 0;
-			p0[i] = 0;
-			ux[i] = 0;
-			uy[i] = 0;
-			vx[i] = 0;
-			vy[i] = 0;
-			mu[i] = 0;
-		}
-		*/
 	}
+
+	void set_global_size_narrow_tubes(int input_L, int input_H, int input_D, int input_Mx, int input_My) {
+		Mx = input_Mx - 1; My = input_My - 1; Msize = input_Mx*input_My; Moffset = input_Mx;
+		//Mcr.resize(Msize, cr);
+		Mcr = new cross[Msize];
+
+		for (int i = 0; i < Msize; i++) {
+			Mcr[i].set_geometry_narrow_tubes(input_L, input_H, input_D);
+		}
+
+		for (int i = 0; i <= Mx; i++) {
+			for (int j = 0; j <= My; j++) {
+				Mcr[i + Moffset*j].id = i + Moffset*j;
+				Mcr[i + Moffset*j].idx = i;
+				Mcr[i + Moffset*j].idy = j;
+				if (j == 0) Mcr[i + Moffset*j].delete_block(4);
+				if (j == My) Mcr[i + Moffset*j].delete_block(2);
+			}
+		}
+
+
+		for (int i = 0; i < Msize; i++) {
+			Mcr[i].set_block(TOTAL_SIZE);
+			TOTAL_SIZE += Mcr[i].total_size;
+		}
+	}
+
 
 	void set_type() {
 		if (Msize == 0) {
@@ -2600,6 +2623,7 @@ int main() {
 
 	multi_cross M_CROSS;
 	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
+	//M_CROSS.set_global_size_narrow_tubes(2*nx_h, nx_h, ny_h/2, Matrix_X, Matrix_Y);
 	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB"  << endl;
 	cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl << endl << endl;
 	pause
