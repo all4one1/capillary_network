@@ -320,7 +320,7 @@ __global__ void chemical_potential(double *mu, double *C)
 			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_up(l, mu));
 			break;
 		case 9: //inlet (from left)
-			mu[l] = -Ca*dx2_forward(l, C) -Gr* r_gamma(l);
+			mu[l] = -Ca*dx2_forward(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l);
 			break;
 		case 10://outlet (to right)
 			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l);
