@@ -426,7 +426,7 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 				- C0[l] * dx1_forward(l, mu) / MM
 				);
 
-			uy[l] = vy[l] + tau * (
+			uy[l] =  tau * (
 				-vx[l] * dx1_forward(l, vy) - vy[l] * dy1(l, vy)
 				+(dx2_forward(l, vy) + dy2(l, vy)) / Re  //  !быть может, !тут нужно дополнить
 				- C0[l] * dy1(l, mu) / MM
@@ -438,7 +438,7 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 				+ (dx2_back(l, vx) + dy2(l, vx)) / Re
 				- C0[l] * dx1_back(l, mu) / MM  //!
 				);
-			uy[l] = vy[l] + tau * (
+			uy[l] =  tau * (
 				-vx[l] * dx1_back(l, vy) - vy[l] * dy1(l, vy)
 				+ (dx2_back(l, vy) + dy2(l, vy)) / Re
 				- C0[l] * dy1(l, mu) / MM //!
@@ -2898,8 +2898,8 @@ int main() {
 		//2nd step, Poisson equation for pressure 
 		{
 			eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
-
-			while (eps > eps0*psiav0 && k < kk) 
+			while (eps > eps0*psiav0)
+			//while (eps > eps0*psiav0 && k < kk) 
 			{
 
 				psiav = 0.0;  k++;
@@ -3024,7 +3024,7 @@ int main() {
 
 
 		//recovery fields writing
-		if (iter % (tt) == 0)
+		if (iter % (int)(tt/4) == 0)
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
