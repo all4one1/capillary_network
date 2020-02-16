@@ -1686,7 +1686,43 @@ struct multi_cross {
 
 		return ten;
 	}
+	void X_averaged_in_each_phase(double hx, double hy, double *C, double *X, double &X1av, double &X2av, double &Xav) {
+		Xav = 0; X1av = 0; /*plus*/ X2av = 0; /*minus*/
+		unsigned int n = 0, n2 = 0, n_plus = 0, n2_plus = 0, n_minus = 0, n2_minus = 0;
 
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			if (t[l] == 0) {
+				Xav += X[l];
+				n++;
+				if (C[l] > 0) {
+					X1av += X[l];
+					n_plus++;
+				}
+				if (C[l] < 0) {
+					X2av += X[l];
+					n_minus++;
+				}
+			}
+
+			else
+			{
+				Xav += C[l] / 2;
+				n2++;
+				if (C[l] > 0) {
+					X1av += X[l] / 2;
+					n2_plus++;
+				}
+				if (C[l] < 0) {
+					X2av += X[l] / 2;
+					n2_minus++;
+				}
+			}
+		}
+
+		if (n + n2 > 0) Xav /= (n + 0.5*n2);
+		if (n_plus + n2_plus > 0) X1av /= (n_plus + 0.5*n2_plus);
+		if (n_minus + n2_minus > 0) X2av /= (n_minus + 0.5*n2_minus);
+	}
 };
 
 struct multi_line {
@@ -2944,7 +2980,7 @@ int main() {
 			true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
 				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 
-			double len, ten, vol, width;
+			double len, ten, vol, width, p_plusAv, p_minusAv, p_Av;
 			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
 			C_statistics(M_CROSS.TOTAL_SIZE, hx_h, hy_h, M_CROSS.t, C_h, C_av, C_plus, C_minus);
@@ -2952,6 +2988,7 @@ int main() {
 			ten = Ca_h / len * M_CROSS.tension(hx_h, hy_h, C_h);
 			vol = M_CROSS.volume(hx_h, hy_h, C_h, 0.2);
 			width = vol / len;
+			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av);
 
 			timer
 			cout << "t= " << tau_h*iter << endl;
@@ -2968,13 +3005,19 @@ int main() {
 			cout << "C_plus=" << C_plus << endl;
 			cout << "C_minus=" << C_minus << endl;
 
-			if (iter == 1)	integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width, Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width" << endl;
+			if (iter == 1)	{
+				integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width" 
+					<< ", Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width" 
+					<< ", p_plusAv, p_minusAv"
+					<< endl;
+			}
 			integrals << setprecision(20) << fixed;
 			integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
 				<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
 				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
 				<< " " << C_av << " " << C_plus << " " << C_minus
 				<< " " << len << " " << ten << " "  << width 
+				<< " " << p_plusAv << " " << p_minusAv
 				<< endl;
 
 			Ek_old = Ek;
