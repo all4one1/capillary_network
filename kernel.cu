@@ -1706,7 +1706,7 @@ struct multi_cross {
 
 			else
 			{
-				Xav += C[l] / 2;
+				Xav += X[l] / 2;
 				n2++;
 				if (C[l] > 0) {
 					X1av += X[l] / 2;
@@ -2980,7 +2980,7 @@ int main() {
 			true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
 				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 
-			double len, ten, vol, width, p_plusAv, p_minusAv, p_Av;
+			double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av;
 			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
 			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
 			C_statistics(M_CROSS.TOTAL_SIZE, hx_h, hy_h, M_CROSS.t, C_h, C_av, C_plus, C_minus);
@@ -2989,6 +2989,8 @@ int main() {
 			vol = M_CROSS.volume(hx_h, hy_h, C_h, 0.2);
 			width = vol / len;
 			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av);
+			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
+			
 
 			timer
 			cout << "t= " << tau_h*iter << endl;
@@ -3008,7 +3010,7 @@ int main() {
 			if (iter == 1)	{
 				integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width" 
 					<< ", Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width" 
-					<< ", p_plusAv, p_minusAv"
+					<< ", p_plusAv, p_minusAv, vx_plusAv, vx_minusAv"
 					<< endl;
 			}
 			integrals << setprecision(20) << fixed;
@@ -3017,7 +3019,7 @@ int main() {
 				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
 				<< " " << C_av << " " << C_plus << " " << C_minus
 				<< " " << len << " " << ten << " "  << width 
-				<< " " << p_plusAv << " " << p_minusAv
+				<< " " << p_plusAv << " " << p_minusAv << " " << vx_plusAv  << " " << vx_minusAv 
 				<< endl;
 
 			Ek_old = Ek;
