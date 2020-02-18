@@ -1698,7 +1698,7 @@ struct multi_cross {
 					X1av += X[l];
 					n_plus++;
 				}
-				if (C[l] < level) {
+				if (C[l] < -level) {
 					X2av += X[l];
 					n_minus++;
 				}
@@ -1712,7 +1712,7 @@ struct multi_cross {
 					X1av += X[l] / 2;
 					n2_plus++;
 				}
-				if (C[l] < level) {
+				if (C[l] < -level) {
 					X2av += X[l] / 2;
 					n2_minus++;
 				}
