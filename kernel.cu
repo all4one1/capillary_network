@@ -1686,7 +1686,7 @@ struct multi_cross {
 
 		return ten;
 	}
-	void X_averaged_in_each_phase(double hx, double hy, double *C, double *X, double &X1av, double &X2av, double &Xav) {
+	void X_averaged_in_each_phase(double hx, double hy, double *C, double *X, double &X1av, double &X2av, double &Xav, double level = 0.0) {
 		Xav = 0; X1av = 0; /*plus*/ X2av = 0; /*minus*/
 		unsigned int n = 0, n2 = 0, n_plus = 0, n2_plus = 0, n_minus = 0, n2_minus = 0;
 
@@ -1694,11 +1694,11 @@ struct multi_cross {
 			if (t[l] == 0) {
 				Xav += X[l];
 				n++;
-				if (C[l] > 0) {
+				if (C[l] > level) {
 					X1av += X[l];
 					n_plus++;
 				}
-				if (C[l] < 0) {
+				if (C[l] < level) {
 					X2av += X[l];
 					n_minus++;
 				}
@@ -1708,11 +1708,11 @@ struct multi_cross {
 			{
 				Xav += X[l] / 2;
 				n2++;
-				if (C[l] > 0) {
+				if (C[l] > level) {
 					X1av += X[l] / 2;
 					n2_plus++;
 				}
-				if (C[l] < 0) {
+				if (C[l] < level) {
 					X2av += X[l] / 2;
 					n2_minus++;
 				}
@@ -2988,7 +2988,7 @@ int main() {
 			ten = Ca_h / len * M_CROSS.tension(hx_h, hy_h, C_h);
 			vol = M_CROSS.volume(hx_h, hy_h, C_h, 0.2);
 			width = vol / len;
-			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av);
+			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av, 0.05);
 			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
 			
 
