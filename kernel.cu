@@ -2934,8 +2934,8 @@ int main() {
 		//2nd step, Poisson equation for pressure 
 		{
 			eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
-			while (eps > eps0*psiav0)
-			//while (eps > eps0*psiav0 && k < kk) 
+			//while (eps > eps0*psiav0)
+			while (eps > eps0*psiav0 && k < kk) 
 			{
 
 				psiav = 0.0;  k++;
