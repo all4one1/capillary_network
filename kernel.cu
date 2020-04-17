@@ -509,6 +509,132 @@ __global__ void concentration(double *C, double *C0, double *vx, double *vy, dou
 
 
 }
+__global__ void concentration_no_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-vx[l] * dx1(l, C0)
+					- vy[l] * dy1(l, C0)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			C[l] = 0.5;
+			break;
+		case 2: //upper rigid
+			C[l] = 0.5;
+			break;
+		case 3: //right rigid
+			C[l] = 0.5;
+			break;
+		case 4: //lower rigid
+			C[l] = 0.5;
+			break;
+		case 5: //left upper rigid corner
+			C[l] = 0.5;
+			break;
+		case 6: //right upper rigid corner
+			C[l] = 0.5;
+			break;
+		case 7: //right lower rigid corner
+			C[l] = 0.5;
+			break;
+		case 8: //left lower rigid corner
+			C[l] = 0.5;
+			break;
+		case 9: //inlet (from left)
+			C[l] = -0.5;
+			break;
+		case 10://outlet (to right)
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+__global__ void concentration_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-vx[l] * dx1(l, C0)
+					- vy[l] * dy1(l, C0)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			if (C0[n3[l]] < C0[l])
+			C[l] = C0[n3[l]];
+			break;
+		case 2: //upper rigid
+			if (C0[n4[l]] < C0[l])
+			C[l] = C0[n4[l]];
+			break;
+		case 3: //right rigid
+			if (C0[n1[l]] < C0[l])
+			C[l] = C0[n1[l]];
+			break;
+		case 4: //lower rigid
+			if (C0[n2[l]] < C0[l])
+			C[l] = C0[n2[l]];
+			break;
+		case 5: //left upper rigid corner
+			if (C0[n3[n4[l]]] < C0[l])
+			C[l] = C0[n3[n4[l]]];
+			break;
+		case 6: //right upper rigid corner
+			if (C0[n1[n4[l]]] < C0[l])
+			C[l] = C0[n1[n4[l]]];
+			break;
+		case 7: //right lower rigid corner
+			if (C0[n2[n1[l]]] < C0[l])
+			C[l] = C0[n2[n1[l]]];
+			break;
+		case 8: //left lower rigid corner
+			if (C0[n2[n3[l]]] < C0[l])
+			C[l] = C0[n2[n3[l]]];
+			break;
+		case 9: //inlet (from left)
+			C[l] = -0.5;
+			break;
+		case 10://outlet (to right)
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+
+
 
 __global__ void concentration_no_input_C(double *C, double *C0, double *vx, double *vy, double *mu) {
 
@@ -2924,6 +3050,8 @@ int main() {
 
 			if (PHASE_h == 1)
 				concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+				//concentration_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+				//concentration_no_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
 			else if (PHASE_h == 0) {
 				//if (timeq < 1)
 				concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
