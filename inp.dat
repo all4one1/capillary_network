@@ -1,16 +1,16 @@
-50 ny_h	// nodes of the pore width
-50 nx_h // nodes of the tube length
-0.1 each_t  // fraction of time to write to a file
-10 each //each #th node to write to a file
-3 Matrix_X    //Nx elements of the porous matrix
-3 Matrix_Y  	//Ny elements of the porous matrix
-4.0e-5;  tau_h
--0.5  A_h
-4e-4  Ca_h
-0.0  Gr_h 
-1e+4  Pe_h
-1  Re_h;
-0  alpha_h
-1  MM_h 
-10000 blanked value, set zero if you dont want to use tecplot
-0  Program type, 1 is phase field, 0 is single phase flow
+ny = 50	// nodes of the pore width
+nx = 50 // nodes of the tube length
+each_t = 0.1  // fraction of time to write to a file
+each_xy = 10 //each #th node to write to a file
+Matrix_X = 3    //Nx elements of the porous matrix
+Matrix_Y = 3 	//Ny elements of the porous matrix
+tau = 4.0e-5  
+A = -0.5  
+Ca = 4e-4  
+Gr = 0.0   
+Pe = 1e+4  
+Re = 1  
+alpha = 0  
+MM = 1   
+tecplot = 10000 // blanked value, set zero if you dont want to use tecplot
+Program_type = 0 // 0  Program type, 1 is phase field, 0 is single phase flow

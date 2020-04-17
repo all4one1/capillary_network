@@ -179,6 +179,80 @@ void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, 
 
 }
 
+struct ReadingFile
+{
+	ifstream read;
+	string str, substr, buffer;
+	string file_name;
+	stringstream ss;
+	istringstream iss;
+	ostringstream oss;
+	int stat, pos;
+
+
+	ReadingFile(string name)
+	{
+		file_name = name;
+		open_file(file_name);
+	}
+
+	void open_file(string file_name) {
+		read.open(file_name);
+		if (read.good()) {
+			cout << endl  << "the parameter file \"" << file_name << "\" has been read " << endl << endl;
+			oss << read.rdbuf();
+			buffer = oss.str();
+			iss.str(buffer);
+		}
+		else {
+			cout << "the parameter file has been not found, default parameters will be initialized " << endl;
+			buffer = "";
+			iss.str(buffer);
+		}
+	}
+
+
+	template <typename T>
+	void reading(T &var, string parameter_name, T def_var) {
+		transform(parameter_name.begin(), parameter_name.end(), parameter_name.begin(), ::tolower);
+		iss.clear();
+		iss.seekg(0);
+
+		while (getline(iss, str))
+		{
+			//substr.clear();
+			ss.str("");	ss.clear();	ss << str;	ss >> substr;
+			transform(substr.begin(), substr.end(), substr.begin(), ::tolower);
+			if (substr == parameter_name) {
+				pos = (int)ss.tellg();
+				while (ss >> substr) {
+					if (substr == "=")
+					{
+						ss >> var;
+						break;
+					}
+				}
+
+				if (!ss.good()) {
+					ss.clear();
+					ss.seekg(pos);
+					ss >> var;
+				}
+				break;
+			}
+		}
+		if (iss.fail())
+		{
+			var = def_var;
+		}
+	}
+
+
+
+};
+
+
+
 
 //__device__ double *C, *C0, *ux, *uy, *vx, *vy, *p, *p0, *mu;
 //__device__ multi_cross *Md;
@@ -2705,7 +2779,7 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 }
 
 
-int main() {
+int main(int argc, char **argv) {
 	int devID = 0;
 	cudaSetDevice(devID);
 	cudaDeviceProp deviceProp;
@@ -2741,7 +2815,7 @@ int main() {
 	//1 is 'yes' / true, 0 is 'no' / false
 	int picture_switch = 1; //write fields to a file?
 	int read_switch = 1; //read to continue or not? 
-	double tecplot = 10000;
+	double tecplot;
 
 	//alternative geometry
 	/*
@@ -2753,25 +2827,34 @@ int main() {
 	pause
 	*/
 
-	ny_h = 200;	// nodes of the pore width
-	nx_h = 200;	// nodes of the tube length
-	each_t = 0.01; // fraction of time to write fields to a file
-	each = 10; //each #th node to write to a file
-	Matrix_X = 1;   //Nx elements of the porous matrix
-	Matrix_Y = 2;	//Ny elements of the porous matrix
-	tau_h = 5.0e-5; 
-	nxout = 1;
-	nyout = 1;
-	A_h = -0.5;
-	Ca_h = 4e-4;
-	Gr_h = 0.0;
-	Pe_h = 1e+4;
-	Re_h = 1;
-	alpha_h = 0;
-	MM_h = 1;
 
-	//in case if this function is here the default parameters above will be rewritten
-	reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
+
+	
+	//reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
+
+	string file_name = "inp.dat";
+	if (argc == 2) file_name = argv[1];
+	ReadingFile File(file_name);
+	File.reading<unsigned int>(ny_h, "ny", 200);
+	File.reading<unsigned int>(nx_h, "nx", 200);
+	File.reading<double>(each_t, "each_t", 0.1);
+	File.reading<unsigned int>(each, "each_ny", 10);
+	File.reading<unsigned int>(Matrix_X, "Matrix_X", 3);
+	File.reading<unsigned int>(Matrix_Y, "Matrix_Y", 3);
+	File.reading<double>(tau, "tau", 5.0e-5);
+	File.reading<double>(A_h, "A", -0.5);
+	File.reading<double>(Ca_h, "Ca", 4e-4);
+	File.reading<double>(Gr_h, "Gr", 0.0);
+	File.reading<double>(Pe_h, "Pa", 1e+4);
+	File.reading<double>(Re_h, "Ca", 1.0);
+	File.reading<double>(alpha_h, "alpha", 0.0);
+	File.reading<double>(MM_h, "MM", 1.0);
+	File.reading<double>(tecplot, "tecplot", 10000);
+	File.reading<unsigned int>(PHASE_h, "Program_type", 1);
+	File.reading<int>(read_switch, "read_switch", 1);
+	File.reading<int>(picture_switch, "picture_switch", 1);
+
+	
 
 	hy_h = 1.0 / ny_h;	hx_h = hy_h;
 	tt = round(1.0 / tau_h);
