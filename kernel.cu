@@ -14,6 +14,7 @@
 #include <ctime>
 #include <cuda.h>
 #include <vector>
+#include <csignal>
 
 #ifdef _WIN32
 #include "windows.h"
@@ -21,7 +22,7 @@
 
 
 using namespace std;
-
+int state;
 
 #define Pi 3.1415926535897932384626433832795
 #define pause system("pause");
@@ -46,7 +47,7 @@ if (e != cudaSuccess) {\
         } \
     } while (0)
 
-
+#define VarName(Variable) (#Variable)
 
 //getting Ek and Vmax
 void velocity(unsigned int N, double hx, double hy, double *vx, double *vy, double &Ek, double &Vmax) {
@@ -1236,6 +1237,106 @@ struct multi_cross {
 		}
 
 	}
+	void set_type_B() {
+		int l, L, l1, l2, l3, l4;
+
+		//inner
+		for (int i = 0; i <= nxg; i++) {
+			for (int j = 0; j <= nyg; j++) {
+				l = i + OFFSET*j; L = J[l];
+				if (I[l] == 1) {
+					if (n1[L] != -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
+						t[L] = 0;
+
+				}
+			}
+		}
+
+
+
+		//rigid walls
+		for (int i = 0; i <= nxg; i++) {
+			for (int j = 0; j <= nyg; j++) {
+				l = i + OFFSET*j; L = J[l];
+				l1 = i - 1 + OFFSET*j;
+				l2 = i + OFFSET*j + OFFSET;
+				l3 = i + 1 + OFFSET*j;
+				l4 = i + OFFSET*j - OFFSET;
+				if (I[l] == 1) {
+					if (I[l] == 1) {
+						if (n1[L] == -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
+							t[L] = 1;
+						if (n1[L] != -1 && n2[L] == -1 && n3[L] != -1 && n4[L] != -1)
+							t[L] = 2;
+						if (n1[L] != -1 && n2[L] != -1 && n3[L] == -1 && n4[L] != -1)
+							t[L] = 3;
+						if (n1[L] != -1 && n2[L] != -1 && n3[L] != -1 && n4[L] == -1)
+							t[L] = 4;
+					}
+
+				}
+			}
+		}
+
+
+		//corners
+		for (int i = 0; i <= nxg; i++) {
+			for (int j = 0; j <= nyg; j++) {
+				l = i + OFFSET*j; L = J[l];
+
+				//cout << i << " " << j << " " << l << " " <<  endl; pause
+				if (I[l] == 1) {
+					if (n2[n1[L]] == -1 && n1[L] != -1 && n2[L] != -1)
+						t[L] = 5;
+					if (n2[n3[L]] == -1 && n3[L] != -1 && n2[L] != -1)
+						t[L] = 6;
+					if (n3[n4[L]] == -1 && n3[L] != -1 && n4[L] != -1)
+						t[L] = 7;
+					if (n1[n4[L]] == -1 && n1[L] != -1 && n4[L] != -1)
+						t[L] = 8;
+				}
+			}
+		}
+
+		//inlet, outlet
+		for (int i = 0; i <= nxg; i = i + nxg) {
+			for (int j = 0; j <= nyg; j++) {
+				l = i + OFFSET*j; L = J[l];
+				if (I[l] == 1) {
+					if (i == 0) {
+						t[L] = 9;
+						if (t[n3[L]] == 2) t[L] = 2;
+						if (t[n3[L]] == 4) t[L] = 4;
+					}
+					if (i == nxg) {
+						t[L] = 10;
+						if (t[n1[L]] == 2) t[L] = 2;
+						if (t[n1[L]] == 4) t[L] = 4;
+					}
+				}
+			}
+		}
+
+		/*
+		//near border 
+		for (int i = 0; i <= nxg; i = i + nxg) {
+			for (int j = 0; j <= nyg; j++) {
+				l = i + OFFSET*j; L = J[l];
+				if (t[n1[L]] == 1) t[L] = 11;
+				if (t[n2[L]] == 2) t[L] = 12;
+				if (t[n3[L]] == 3) t[L] = 13;
+				if (t[n4[L]] == 4) t[L] = 14;
+
+				if (t[n1[L]] == 1 && t[n2[L]] == 2) t[L] = 15;
+				if (t[n2[L]] == 2 && t[n3[L]] == 3) t[L] = 16;
+				if (t[n3[L]] == 3 && t[n4[L]] == 4) t[L] = 17;
+				if (t[n4[L]] == 4 && t[n1[L]] == 1) t[L] = 18;
+			}
+		}
+		*/
+
+
+	}
 
 	void set_neighbor()
 	{
@@ -1363,6 +1464,36 @@ struct multi_cross {
 
 
 	}
+	void set_neighbor_B() {
+		int l, L, l1, l2, l3, l4;
+
+		for (int j = 0; j <= nyg; j++) {
+			for (int i = 0; i <= nxg; i++) {
+
+
+				l = i + OFFSET*j; L = J[l];
+				l1 = i - 1 + OFFSET*j;
+				l2 = i + OFFSET*j + OFFSET;
+				l3 = i + 1 + OFFSET*j;
+				l4 = i + OFFSET*j - OFFSET;
+
+
+				if (I[l] == 1) {
+
+					if (i > 0) if (I[l1] == 1) n1[L] = J[l1];
+					if (i < nxg) if (I[l3] == 1) n3[L] = J[l3];
+					if (j < nyg) if (I[l2] == 1) n2[L] = J[l2];
+					if (j > 0) if (I[l4] == 1) n4[L] = J[l4];
+
+
+				}
+
+				else {
+				}
+			}
+		}
+
+	}
 
 	void set_global_id() {
 		nxg = 0, nyg = 0;
@@ -1394,8 +1525,8 @@ struct multi_cross {
 		for (int im = 1; im <= Mx; im++) shift_x[im] = (Mcr[im - 1].nx[0] + 1 + Mcr[im - 1].nx[1] + 1 + Mcr[im - 1].nx[3] + 1 + shift_x[im - 1]);
 		for (int jm = 1; jm <= My; jm++) shift_y[jm] = (Mcr[(jm - 1)*Moffset].ny[0] + 1 + Mcr[(jm - 1)*Moffset].ny[2] + 1 + Mcr[(jm - 1)*Moffset].ny[4] + 1 + shift_y[jm - 1]);
 
-		if (Msize == 0 || iter == 0) {
-			printf("hop hey la la ley, stop it, bro, ya doin it wron' \n");
+		if (Msize == 0) {
+			printf("set_global_id , hop hey la la ley, stop it, bro, ya doin it wron' \n");
 		}
 
 
@@ -1450,6 +1581,105 @@ struct multi_cross {
 
 
 	}
+
+	void set_global_id_B() {
+		nxg = 0, nyg = 0;
+		for (int im = 0; im <= Mx; im++) 	nxg += Mcr[im].nx[0] + 1 + Mcr[im].nx[1] + 1 + Mcr[im].nx[3] + 1;
+		for (int jm = 0; jm <= My; jm++)	nyg += Mcr[jm*Moffset].ny[0] + 1 + Mcr[jm*Moffset].ny[2] + 1 + Mcr[jm*Moffset].ny[4] + 1;
+		if (nxg != 0) nxg--; if (nyg != 0) nyg--;
+
+
+		I = new int[(nxg + 1)*(nyg + 1)];
+		J = new int[(nxg + 1)*(nyg + 1)];
+		J_back = new int[TOTAL_SIZE];
+		n1 = new int[TOTAL_SIZE];
+		n2 = new int[TOTAL_SIZE];
+		n3 = new int[TOTAL_SIZE];
+		n4 = new int[TOTAL_SIZE];
+		t = new int[TOTAL_SIZE];
+		OFFSET = nxg + 1;
+
+
+		for (unsigned int i = 0; i < (nxg + 1)*(nyg + 1); i++) {
+			I[i] = 0; J[i] = -1;
+		}
+		for (int i = 0; i < TOTAL_SIZE; i++) {
+			J_back[i] = -1;
+			n1[i] = -1;
+			n2[i] = -1;
+			n3[i] = -1;
+			n4[i] = -1;
+			t[i] = -1;
+		}
+
+		int *shift_x, *shift_y;
+		shift_x = new int[Mx + 1];
+		shift_y = new int[My + 1];
+		shift_x[0] = 0;
+		shift_y[0] = 0;
+
+		for (int im = 1; im <= Mx; im++) shift_x[im] = (Mcr[im - 1].nx[0] + 1 + Mcr[im - 1].nx[1] + 1 + Mcr[im - 1].nx[3] + 1 + shift_x[im - 1]);
+		for (int jm = 1; jm <= My; jm++) shift_y[jm] = (Mcr[(jm - 1)*Moffset].ny[0] + 1 + Mcr[(jm - 1)*Moffset].ny[2] + 1 + Mcr[(jm - 1)*Moffset].ny[4] + 1 + shift_y[jm - 1]);
+
+		if (Msize == 0) {
+			printf("set_global_id , hop hey la la ley, stop it, bro, ya doin it wron' \n");
+		}
+
+
+		unsigned int k, it = 0, in, ii, jj;
+		for (int jm = 0; jm <= My; jm++) {
+			for (int im = 0; im <= Mx; im++) {
+
+				k = im + Moffset*jm;
+				for (unsigned int q = 0; q < 5; q++)
+				{
+					if (Mcr[k].size[q] == 0) continue;
+					for (int j = 0; j <= Mcr[k].ny[q]; j++) {
+						for (int i = 0; i <= Mcr[k].nx[q]; i++) {
+
+							if (q == 1) {
+								ii = i + shift_x[im];
+								jj = j + shift_y[jm] + (Mcr[k].ny[4] + 1);
+							}
+
+							if (q == 0) {
+								ii = i + shift_x[im] + Mcr[k].nx[1] + 1;
+								jj = j + shift_y[jm] + (Mcr[k].ny[4] + 1);
+							}
+
+							if (q == 3) {
+								ii = i + shift_x[im] + Mcr[k].nx[1] + 1 + Mcr[k].nx[0] + 1;
+								jj = j + shift_y[jm] + (Mcr[k].ny[4] + 1);
+							}
+
+							if (q == 2) {
+								ii = i + shift_x[im] + Mcr[k].nx[1] + 1;
+								jj = j + shift_y[jm] + (Mcr[k].ny[4] + 1) + (Mcr[k].ny[0] + 1);
+
+							}
+
+							if (q == 4) {
+								ii = i + shift_x[im] + Mcr[k].nx[1] + 1;
+								jj = j + shift_y[jm];
+							}
+
+							in = ii + OFFSET*jj;
+							I[in] = 1;
+							J[in] = it;
+							J_back[it] = in;
+
+							it++;
+						}
+					}
+				}
+			}
+		}
+
+
+	}
+
+
+
 
 	void write_field(double *f, string file_name, double time, int step) {
 #ifdef __linux__ 
@@ -1923,6 +2153,29 @@ struct multi_cross {
 		if (n_plus + n2_plus > 0) X1av /= (n_plus + 0.5*n2_plus);
 		if (n_minus + n2_minus > 0) X2av /= (n_minus + 0.5*n2_minus);
 	}
+
+	void check() {
+		int l, L;
+		ofstream write("out.txt");
+		for (int i = 0; i <= nxg; i++) {
+			for (int j = 0; j <= nyg; j++) {
+				l = i + OFFSET*j; L = J[l];
+
+				if (I[i + OFFSET*j] == 1)
+					write << i << " " << j << " " << 1 << " " << L << " " << t[L] << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] << endl;
+				else write << i << " " << j << " " << -1 << " " << -1 << " " << -1 << " " << -1 << " " << -1 << " " << -1 << " " << -1 << endl;
+			}
+
+
+
+		}
+		write.close();
+
+
+	}
+
+
+
 };
 
 struct multi_line {
@@ -2779,7 +3032,25 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 }
 
 
+void signalHandler(int signum) {
+
+	cout << "Interrupt signal (" << signum << ") received.\n";
+	cout << "state: " << state << endl;
+	// cleanup and close up stuff here  
+	// terminate program  
+
+	exit(signum);
+}
+
+
+
+
+
+
 int main(int argc, char **argv) {
+	state = 0;
+	signal(SIGINT, signalHandler);
+
 	int devID = 0;
 	cudaSetDevice(devID);
 	cudaDeviceProp deviceProp;
@@ -2813,9 +3084,12 @@ int main(int argc, char **argv) {
 	unsigned int PHASE_h = 1;
 
 	//1 is 'yes' / true, 0 is 'no' / false
-	int picture_switch = 1; //write fields to a file?
-	int read_switch = 1; //read to continue or not? 
+	unsigned int picture_switch = 1; //write fields to a file?
+	unsigned int read_switch = 1; //read to continue or not? 
 	double tecplot;
+
+
+
 
 	//alternative geometry
 	/*
@@ -2841,20 +3115,20 @@ int main(int argc, char **argv) {
 	File.reading<unsigned int>(each, "each_ny", 10);
 	File.reading<unsigned int>(Matrix_X, "Matrix_X", 3);
 	File.reading<unsigned int>(Matrix_Y, "Matrix_Y", 3);
-	File.reading<double>(tau, "tau", 5.0e-5);
+	File.reading<double>(tau_h, "tau", 5.0e-5);
 	File.reading<double>(A_h, "A", -0.5);
 	File.reading<double>(Ca_h, "Ca", 4e-4);
 	File.reading<double>(Gr_h, "Gr", 0.0);
 	File.reading<double>(Pe_h, "Pa", 1e+4);
-	File.reading<double>(Re_h, "Ca", 1.0);
+	File.reading<double>(Re_h, "Ra", 1.0);
 	File.reading<double>(alpha_h, "alpha", 0.0);
 	File.reading<double>(MM_h, "MM", 1.0);
 	File.reading<double>(tecplot, "tecplot", 10000);
 	File.reading<unsigned int>(PHASE_h, "Program_type", 1);
-	File.reading<int>(read_switch, "read_switch", 1);
-	File.reading<int>(picture_switch, "picture_switch", 1);
+	File.reading<unsigned int>(read_switch, "read_switch", 1);
+	File.reading<unsigned int>(picture_switch, "picture_switch", 1);
 
-	
+
 
 	hy_h = 1.0 / ny_h;	hx_h = hy_h;
 	tt = round(1.0 / tau_h);
@@ -2873,13 +3147,34 @@ int main(int argc, char **argv) {
 	//M_CROSS.set_global_size_narrow_tubes(2*nx_h, nx_h, ny_h/2, Matrix_X, Matrix_Y);
 	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB"  << endl;
 	cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl << endl << endl;
-	pause
+	
+
+	/*
 	M_CROSS.set_type();
 	//M_CROSS.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
 	//M_CROSS.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
 	M_CROSS.set_neighbor();
 	M_CROSS.set_global_id();
-	
+	*/
+
+
+
+	/*
+	M_CROSS.set_global_id_B();
+	M_CROSS.set_neighbor_B();	
+	M_CROSS.set_type_B();  
+	M_CROSS.check();
+	*/
+	pause
+
+
+
+
+
+
+
+
+
 
 
 	/*
