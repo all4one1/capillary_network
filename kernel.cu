@@ -22,6 +22,7 @@
 
 
 using namespace std;
+using std::cout;
 int state;
 
 #define Pi 3.1415926535897932384626433832795
@@ -48,6 +49,7 @@ if (e != cudaSuccess) {\
     } while (0)
 
 #define VarName(Variable) (#Variable)
+#define PrintVar(Variable) cout << (#Variable) << " = " << Variable << endl; 
 
 //getting Ek and Vmax
 void velocity(unsigned int N, double hx, double hy, double *vx, double *vy, double &Ek, double &Vmax) {
@@ -182,6 +184,7 @@ void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, 
 
 struct ReadingFile
 {
+private:
 	ifstream read;
 	string str, substr, buffer;
 	string file_name;
@@ -190,11 +193,12 @@ struct ReadingFile
 	ostringstream oss;
 	int stat, pos;
 
-
+public:
 	ReadingFile(string name)
 	{
 		file_name = name;
 		open_file(file_name);
+		stat = 0;
 	}
 
 	void open_file(string file_name) {
@@ -214,7 +218,7 @@ struct ReadingFile
 
 
 	template <typename T>
-	void reading(T &var, string parameter_name, T def_var) {
+	void reading(T &var, string parameter_name, T def_var, T min = 0, T max = 0) {
 		transform(parameter_name.begin(), parameter_name.end(), parameter_name.begin(), ::tolower);
 		iss.clear();
 		iss.seekg(0);
@@ -230,11 +234,12 @@ struct ReadingFile
 					if (substr == "=")
 					{
 						ss >> var;
+						stat = 1;
 						break;
 					}
 				}
 
-				if (!ss.good()) {
+				if (stat == 0) {
 					ss.clear();
 					ss.seekg(pos);
 					ss >> var;
@@ -246,8 +251,51 @@ struct ReadingFile
 		{
 			var = def_var;
 		}
+		
+		if (min != max && (min + max) != 0 ) {
+			if (var > max || var < min)
+			{
+				cout << "Warning: \"" + parameter_name + "\" should not be within this range" << endl;
+				var = def_var;
+			}
+		}
 	}
 
+	void reading_string(string &var, string parameter_name, string def_var) {
+		transform(parameter_name.begin(), parameter_name.end(), parameter_name.begin(), ::tolower);
+		iss.clear();
+		iss.seekg(0);
+
+		while (getline(iss, str))
+		{
+			//substr.clear();
+			ss.str("");	ss.clear();	ss << str;	ss >> substr;
+			transform(substr.begin(), substr.end(), substr.begin(), ::tolower);
+			if (substr == parameter_name) {
+				pos = (int)ss.tellg();
+				while (ss >> substr) {
+					if (substr == "=")
+					{
+						ss >> var;
+						stat = 1;
+						break;
+					}
+				}
+
+				if (stat == 0) {
+					ss.clear();
+					ss.seekg(pos);
+					ss >> var;
+				}
+				break;
+			}
+		}
+		if (iss.fail())
+		{
+			var = def_var;
+		}
+
+	}
 
 
 };
@@ -258,7 +306,7 @@ struct ReadingFile
 //__device__ double *C, *C0, *ux, *uy, *vx, *vy, *p, *p0, *mu;
 //__device__ multi_cross *Md;
 __constant__ double hx, hy, tau, Lx, Ly, tau_p;
-__constant__ double A, Ca, Gr, Pe, Re, MM;
+__constant__ double A, Ca, Gr, Pe, Re, MM, dP;
 __constant__ double sinA, cosA, alpha;
 __constant__ unsigned int nx, ny, n, offset, border_type;
 __constant__ double eps0_d = 1e-5;
@@ -285,6 +333,7 @@ __global__ void hello() {
 	printf("offset= %i  \n", offset);
 	printf("sinA= %f cosA=%f \n", sinA, cosA);
 	printf("Total number of nodes = %i \n", TOTAL_SIZE);
+	printf("P inject factor = %f \n", dP);
 	if (PHASE == 1) printf("Phase field \n");
 	if (PHASE == 0) printf("Single phase flow \n");
 	printf("\n");
@@ -710,7 +759,6 @@ __global__ void concentration_wetting(double *C, double *C0, double *vx, double 
 }
 
 
-
 __global__ void concentration_no_input_C(double *C, double *C0, double *vx, double *vy, double *mu) {
 
 
@@ -863,7 +911,7 @@ __global__ void Poisson(double *p, double *p0, double *ux, double *uy, double *m
 				+ dy1_eq_0_up(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 9: //inlet (from left)
-			p[l] = 8.0 / Re*Lx
+			p[l] = 8.0 / Re*Lx*dP
 				+ PHASE*(0.5*Ca*pow(dx1_forward(l, C), 2)
 				 -mu[l] * C[l]
 				+ A*pow(C[l], 2) + pow(C[l], 4)
@@ -1104,6 +1152,7 @@ struct multi_cross {
 	unsigned int TOTAL_SIZE = 0;
 	int *n1, *n2, *n3, *n4;
 	unsigned int nxg, nyg;
+	unsigned int nx, ny, offset;
 	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;
 	double LX, LY;
 
@@ -1178,7 +1227,7 @@ struct multi_cross {
 
 		l = new int[TOTAL_SIZE];
 		t = new int[TOTAL_SIZE];
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			l[i] = 0;
 			t[i] = 0;
 		}
@@ -1241,8 +1290,8 @@ struct multi_cross {
 		int l, L, l1, l2, l3, l4;
 
 		//inner
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
 					if (n1[L] != -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
@@ -1255,8 +1304,8 @@ struct multi_cross {
 
 
 		//rigid walls
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				l1 = i - 1 + OFFSET*j;
 				l2 = i + OFFSET*j + OFFSET;
@@ -1280,8 +1329,8 @@ struct multi_cross {
 
 
 		//corners
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 
 				//cout << i << " " << j << " " << l << " " <<  endl; pause
@@ -1299,8 +1348,8 @@ struct multi_cross {
 		}
 
 		//inlet, outlet
-		for (int i = 0; i <= nxg; i = i + nxg) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i = i + nxg) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
 					if (i == 0) {
@@ -1349,7 +1398,7 @@ struct multi_cross {
 		n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
 		n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
 		n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
 		}
 
@@ -1467,8 +1516,8 @@ struct multi_cross {
 	void set_neighbor_B() {
 		int l, L, l1, l2, l3, l4;
 
-		for (int j = 0; j <= nyg; j++) {
-			for (int i = 0; i <= nxg; i++) {
+		for (unsigned int j = 0; j <= nyg; j++) {
+			for (unsigned int i = 0; i <= nxg; i++) {
 
 
 				l = i + OFFSET*j; L = J[l];
@@ -1512,7 +1561,7 @@ struct multi_cross {
 		for (unsigned int i = 0; i < (nxg + 1)*(nyg + 1); i++) {
 			I[i] = 0; J[i] = -1;
 		}
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			J_back[i] = -1;
 		}
 
@@ -1581,7 +1630,6 @@ struct multi_cross {
 
 
 	}
-
 	void set_global_id_B() {
 		nxg = 0, nyg = 0;
 		for (int im = 0; im <= Mx; im++) 	nxg += Mcr[im].nx[0] + 1 + Mcr[im].nx[1] + 1 + Mcr[im].nx[3] + 1;
@@ -1603,7 +1651,7 @@ struct multi_cross {
 		for (unsigned int i = 0; i < (nxg + 1)*(nyg + 1); i++) {
 			I[i] = 0; J[i] = -1;
 		}
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			J_back[i] = -1;
 			n1[i] = -1;
 			n2[i] = -1;
@@ -1678,8 +1726,156 @@ struct multi_cross {
 
 	}
 
+	
+
+	void set_global_size_box(int input_nx, int input_ny) {
+		nx = input_nx; nxg = nx;
+		ny = input_ny; nyg = ny;
+		offset = nx + 1;
+		OFFSET = offset;
+		TOTAL_SIZE = (input_nx + 1) * (input_ny + 1);
+	}
+	void set_global_id_box() {
+		I = new int[(nx + 1)*(ny + 1)];
+		J = new int[(nx + 1)*(ny + 1)];
+		J_back = new int[TOTAL_SIZE];
+
+		OFFSET = nx + 1;
 
 
+		for (unsigned int i = 0; i < (nx + 1)*(ny + 1); i++) {
+			I[i] = 0; J[i] = -1;
+		}
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			J_back[i] = -1;
+		}
+
+
+
+		unsigned int k, it = 0; // in, ii, jj;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+
+				k = i + offset*j;
+				I[k] = 1;
+				J[k] = k;
+				J_back[k] = k;
+
+				it++;
+
+			}
+		}
+	}
+	void set_type_box() {
+		l = new int[TOTAL_SIZE];
+		t = new int[TOTAL_SIZE];
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			l[i] = 0;
+			t[i] = 0;
+		}
+
+		unsigned int k;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (i == 0) t[k] = 1;
+				if (i == nx) t[k] = 3;
+				if (j == 0) t[k] = 4;
+				if (j == ny) t[k] = 2;
+
+				iter++;
+
+
+			}
+		}
+	}
+	void set_neighbor_box() {
+		n1 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
+		}
+
+		unsigned int k, it = 0;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (t[k] == 0) {
+					n1[k] = k - 1;
+					n2[k] = k + offset;
+					n3[k] = k + 1;
+					n4[k] = k - offset;
+				}
+
+				if (t[k] == 2) {
+					n1[k] = k - 1;
+					n3[k] = k + 1;
+					n4[k] = k - offset;
+				}
+				if (t[k] == 4) {
+					n1[k] = k - 1;
+					n2[k] = k + offset;
+					n3[k] = k + 1;
+				}
+				if (t[k] == 9 || t[k] == 1) {
+					n3[k] = k + 1;
+					n4[k] = k - offset;
+					n2[k] = k + offset;
+				}
+				if (t[k] == 10 || t[k] == 3) {
+					n1[k] = k - 1;
+					n4[k] = k - offset;
+					n2[k] = k + offset;
+				}
+
+				if (i == nxg) {
+					n3[k] = -1;
+				}
+
+				if (i == 0) {
+					n1[k] = -1;
+				}
+				
+				if (j == nyg) {
+					n2[k] = -1;
+				}
+
+				if (j == 0) {
+					n4[k] = -1;
+				}
+
+
+
+				it++;
+			}
+		}
+	}
+
+	void set_type_tube() {
+		l = new int[TOTAL_SIZE];
+		t = new int[TOTAL_SIZE];
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			l[i] = 0;
+			t[i] = 0;
+	}
+
+		unsigned int k;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (i == 0) t[k] = 9;
+				if (i == nx) t[k] = 10;
+				if (j == 0) t[k] = 4;
+				if (j == ny) t[k] = 2;
+
+				iter++;
+
+
+			}
+		}
+	}
 
 	void write_field(double *f, string file_name, double time, int step) {
 #ifdef __linux__ 
@@ -1693,8 +1889,8 @@ struct multi_cross {
 
 		int l, L;
 		to_file << time << endl;
-		for (int j = 0; j <= nyg; j = j + step) {
-			for (int i = 0; i <= nxg; i = i + step) {
+		for (unsigned int j = 0; j <= nyg; j = j + step) {
+			for (unsigned int i = 0; i <= nxg; i = i + step) {
 				l = i + OFFSET*j; L = J[l];
 				//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
 				if (I[l] == 1) {
@@ -1728,9 +1924,9 @@ struct multi_cross {
 
 		//count the number of x and y elements
 		unsigned int II = 0, JJ = 0;
-		for (int j = 0; j <= nyg; j = j + step)
+		for (unsigned int j = 0; j <= nyg; j = j + step)
 			JJ++;
-		for (int i = 0; i <= nxg; i = i + step)
+		for (unsigned int i = 0; i <= nxg; i = i + step)
 			II++;
 
 		to_file << "VARIABLES=\"x\",\"y\",\"C\",\"mu\",\"vx\",\"vy\",\"p\"" << endl;
@@ -1738,8 +1934,8 @@ struct multi_cross {
 
 		int l, L;
 		//to_file << time << endl;
-		for (int j = 0; j <= nyg; j = j + step) {
-			for (int i = 0; i <= nxg; i = i + step) {
+		for (unsigned int j = 0; j <= nyg; j = j + step) {
+			for (unsigned int i = 0; i <= nxg; i = i + step) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
 					to_file << hx*i << " " << hy*j << " " << C[L] << " " << mu[L] << " " << vx[L] << " " << vy[L] << " " << p[L] << endl;
@@ -1821,9 +2017,9 @@ struct multi_cross {
 		to_file2 << i_time << " " << i_write << " " << timeq << endl;
 
 
-		for (int i = 0; i < TOTAL_SIZE; i++)
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
 			to_file << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
-		for (int i = 0; i < TOTAL_SIZE; i++)
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
 			to_file2 << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
 
 
@@ -1849,7 +2045,7 @@ struct multi_cross {
 		ss >> substr; i_write = atoi(substr.c_str());
 		ss >> substr; timeq = atof(substr.c_str());
 
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			getline(from_file, str);
 			ss.str(""); ss.clear();
 			ss << str;
@@ -1871,11 +2067,11 @@ struct multi_cross {
 	}
 
 	//C0(qx,qy)=0.5d0*dtanh((qx*hx-0.5d0)/delta)
-	void fill_gradually(double *C, double hx, double hy, double delta) {
+	void fill_gradually(double *C, double hx, double hy, double delta, double shift) {
 		unsigned int i, j;
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			i = iG(l); 	j = jG(l);
-			C[l] = 0.5*tanh((i*hx - 0.5) / delta);
+			C[l] = 0.5*tanh((i*hx - shift) / delta);
 		}
 	}
 
@@ -1888,8 +2084,8 @@ struct multi_cross {
 
 		int l, L;
 
-	for (int j = 0; j <= nyg; j = j++) {
-		for (int i = 0; i <= nxg; i = i++) {
+	for (unsigned int j = 0; j <= nyg; j = j++) {
+		for (unsigned int i = 0; i <= nxg; i = i++) {
 		l = i + OFFSET*j; L = J[l];
 
 		if (I[l] == 1) {
@@ -1922,14 +2118,14 @@ struct multi_cross {
 		unsigned int i, j, ii, jj;
 		unsigned int lr, lu, lru; //l right, up and right-up
 
-		for (int l = 0; l < TOTAL_SIZE; l++){
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++){
 			fx[l] = nan;
 			fy[l] = nan;
 		}
-		int l = 0;
+//		int l = 0;
 
 
-		for (int l = 0; l < TOTAL_SIZE; l++) {
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 				if (C[l] < val)
 					mark[l] = -1;
 				else if (C[l] > val)
@@ -1938,12 +2134,18 @@ struct multi_cross {
 					mark[l] = 0;
 		}
 
-		for (int l = 0; l < TOTAL_SIZE; l++) {
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			i = iG(l); 	j = jG(l);
 
 			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
 			if (t[n2[l]] == 10 || t[n4[l]] == 10) continue;
+			if (n3[l] == -1 || n2[l] == -1) continue;
 			ii = iG(n3[l]); jj = jG(n2[l]);
+			
+			//if (ii > nxg || jj > nyg) continue;
+
+
+			//cout << "l " << l << endl;
 
 			lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
 
@@ -2093,7 +2295,7 @@ struct multi_cross {
 
 	double volume(double hx, double hy, double *C, double lim) {
 		double vol = 0;
-		unsigned int i, j;
+		//unsigned int i, j;
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
 			if (abs(C[l]) < lim)
@@ -2105,11 +2307,11 @@ struct multi_cross {
 
 	double tension(double hx, double hy, double *C) {
 		double ten = 0;
-		unsigned int lr, lu, lru;
+		//unsigned int lr, lu, lru;
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
 
-			lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
+			//lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
 
 			ten += 0.25 / hx / hx*pow(C[n3[l]] - C[n1[l]], 2) + 0.25 / hy / hy*pow(C[n2[l]] - C[n4[l]], 2);
 		}
@@ -2156,9 +2358,9 @@ struct multi_cross {
 
 	void check() {
 		int l, L;
-		ofstream write("out.txt");
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		ofstream write("geomSettingCheck.txt");
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 
 				if (I[i + OFFSET*j] == 1)
@@ -2210,14 +2412,14 @@ struct multi_line {
 
 		J = new int[(nxg + 1)*(nyg + 1)];
 		I = new int[(nxg + 1)*(nyg + 1)];
-		for (int i = 0; i < (nxg + 1)*(nyg + 1); i++) {
+		for (unsigned int i = 0; i < (nxg + 1)*(nyg + 1); i++) {
 			J[i] = -1; I[i] = 0;
 		}
 
 		// zero-level
 		while (shiftY < line_y) {
-			for (int j = 0; j <= z; j++) {
-				for (int i = 0; i <= x - 1; i++) {
+			for (unsigned int j = 0; j <= z; j++) {
+				for (unsigned int i = 0; i <= x - 1; i++) {
 					//gi[i] = 1; 	gj[j] = 1;
 					li.push_back(i + shiftX);
 					lj.push_back(j + shiftY);
@@ -2229,13 +2431,13 @@ struct multi_line {
 		cout << iter << endl;
 
 		// main levels
-		for (int C = 1; C <= line_N; C++)
+		for (unsigned int C = 1; C <= line_N; C++)
 		{
 
 			//column
 			shiftX += x;
-			for (int i = 0; i <= z; i++) {
-				for (int j = 0; j <= line_y; j++) {
+			for (unsigned int i = 0; i <= z; i++) {
+				for (unsigned int j = 0; j <= line_y; j++) {
 					li.push_back(i + shiftX);
 					lj.push_back(j);
 					iter++;
@@ -2246,8 +2448,8 @@ struct multi_line {
 			shiftX += z;
 			shiftY = (y + z) / 2;
 			while (shiftY < line_y) {
-				for (int i = 1; i <= x - 1; i++) {
-					for (int j = 0; j <= z; j++) {
+				for (unsigned int i = 1; i <= x - 1; i++) {
+					for (unsigned int j = 0; j <= z; j++) {
 						li.push_back(i + shiftX);
 						lj.push_back(j + shiftY);
 
@@ -2261,8 +2463,8 @@ struct multi_line {
 			//column
 			shiftX += x;
 
-			for (int i = 0; i <= z; i++) {
-				for (int j = 0; j <= line_y; j++) {
+			for (unsigned int i = 0; i <= z; i++) {
+				for (unsigned int j = 0; j <= line_y; j++) {
 					li.push_back(i + shiftX);
 					lj.push_back(j);
 					iter++;
@@ -2273,8 +2475,8 @@ struct multi_line {
 			shiftX += z;
 			shiftY = 0;
 			while (shiftY < line_y) {
-				for (int j = 0; j <= z; j++) {
-					for (int i = 1; i <= x - 1; i++) {
+				for (unsigned int j = 0; j <= z; j++) {
+					for (unsigned int i = 1; i <= x - 1; i++) {
 						//gi[i] = 1; 	gj[j] = 1;
 						li.push_back(i + shiftX);
 						lj.push_back(j + shiftY);
@@ -2302,7 +2504,7 @@ struct multi_line {
 		n4 = new int[TOTAL_SIZE];
 		t = new int[TOTAL_SIZE];
 
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			n1[i] = -1;
 			n2[i] = -1;
 			n3[i] = -1;
@@ -2311,7 +2513,7 @@ struct multi_line {
 		}
 
 
-		for (int i = 0; i < iter; i++) {
+		for (unsigned int i = 0; i < iter; i++) {
 			J_back[i] = li[i] + OFFSET*lj[i];
 			J[J_back[i]] = i;
 			I[J_back[i]] = 1;
@@ -2332,8 +2534,8 @@ struct multi_line {
 		int l, L, l1, l2, l3, l4;
 
 
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				l1 = i - 1 + OFFSET*j;
 				l2 = i + OFFSET*j + OFFSET;
@@ -2362,8 +2564,8 @@ struct multi_line {
 		int l, L, l1, l2, l3, l4;
 
 		//inner
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
 					if (n1[L] != -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
@@ -2376,8 +2578,8 @@ struct multi_line {
 
 
 		//rigid walls
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				l1 = i - 1 + OFFSET*j;
 				l2 = i + OFFSET*j + OFFSET;
@@ -2401,8 +2603,8 @@ struct multi_line {
 
 
 		//corners
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
 					if (n2[n1[L]] == -1 && n1[L] != -1 && n2[L] != -1)
@@ -2418,8 +2620,8 @@ struct multi_line {
 		}
 
 		//inlet, outlet
-		for (int i = 0; i <= nxg; i = i + nxg) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i = i + nxg) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
 					if (i == 0) {
@@ -2450,8 +2652,8 @@ struct multi_line {
 	void check() {
 		int l, L;
 		ofstream write("out.txt");
-		for (int i = 0; i <= nxg; i++) {
-			for (int j = 0; j <= nyg; j++) {
+		for (unsigned int i = 0; i <= nxg; i++) {
+			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[i + OFFSET*j] == 1)
 					write << i << " " << j << " " << 1 << " " << L << " " << t[L] << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] << endl;
@@ -2473,8 +2675,8 @@ struct multi_line {
 
 		int l, L;
 		to_file << time << endl;
-		for (int j = 0; j <= nyg; j = j + step) {
-			for (int i = 0; i <= nxg; i = i + step) {
+		for (unsigned int j = 0; j <= nyg; j = j + step) {
+			for (unsigned int i = 0; i <= nxg; i = i + step) {
 				l = i + OFFSET*j; L = J[l];
 				//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
 				if (I[l] == 1) {
@@ -2504,9 +2706,9 @@ struct multi_line {
 		to_file2 << i_time << " " << i_write << endl;
 
 
-		for (int i = 0; i < TOTAL_SIZE; i++)
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
 			to_file << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
-		for (int i = 0; i < TOTAL_SIZE; i++)
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
 			to_file2 << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
 
 
@@ -2531,7 +2733,7 @@ struct multi_line {
 		ss >> substr; i_time = atoi(substr.c_str());
 		ss >> substr; i_write = atoi(substr.c_str());
 
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			getline(from_file, str);
 			ss.str(""); ss.clear();
 			ss << str;
@@ -2574,14 +2776,14 @@ struct box {
 		void set_type() {
 			l = new int[TOTAL_SIZE];
 			t = new int[TOTAL_SIZE];
-			for (int i = 0; i < TOTAL_SIZE; i++) {
+			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 				l[i] = 0;
 				t[i] = 0;
 			}
 
 			unsigned int k;
-			for (int i = 0; i <= nx; i++) {
-				for (int j = 0; j <= ny; j++) {
+			for (unsigned int i = 0; i <= nx; i++) {
+				for (unsigned int j = 0; j <= ny; j++) {
 					k = i + offset*j;
 					if (i == 0) t[k] = 9;
 					if (i == nx) t[k] = 10;
@@ -2604,13 +2806,13 @@ struct box {
 			n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
 			n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
 			n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-			for (int i = 0; i < TOTAL_SIZE; i++) {
+			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 				n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
 			}
 
 			unsigned int k, it = 0;
-			for (int i = 0; i <= nx; i++) {
-				for (int j = 0; j <= ny; j++) {
+			for (unsigned int i = 0; i <= nx; i++) {
+				for (unsigned int j = 0; j <= ny; j++) {
 					k = i + offset*j;
 					if (t[k] == 0) {
 						n1[k] = k - 1;
@@ -2653,15 +2855,15 @@ struct box {
 			for (unsigned int i = 0; i < (nx + 1)*(ny + 1); i++) {
 				I[i] = 0; J[i] = -1;
 			}
-			for (int i = 0; i < TOTAL_SIZE; i++) {
+			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 				J_back[i] = -1;
 			}
 
 
 
-			unsigned int k, it = 0, in, ii, jj;
-			for (int i = 0; i <= nx; i++) {
-				for (int j = 0; j <= ny; j++) {
+			unsigned int k, it = 0; // , in, ii, jj;
+			for (unsigned int i = 0; i <= nx; i++) {
+				for (unsigned int j = 0; j <= ny; j++) {
 
 					k = i + offset*j;
 					I[k] = 1;
@@ -2688,8 +2890,8 @@ struct box {
 
 			unsigned int l, L;
 			to_file << time << endl;
-			for (int j = 0; j <= nyg; j = j + step) {
-				for (int i = 0; i <= nxg; i = i + step) {
+			for (unsigned int j = 0; j <= nyg; j = j + step) {
+				for (unsigned int i = 0; i <= nxg; i = i + step) {
 					l = i + OFFSET*j; L = J[l];
 					//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
 					if (I[l] == 1) {
@@ -2721,9 +2923,9 @@ struct box {
 			to_file2 << i_time << " " << i_write << endl;
 
 
-			for (int i = 0; i < TOTAL_SIZE; i++)
+			for (unsigned int i = 0; i < TOTAL_SIZE; i++)
 				to_file << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
-			for (int i = 0; i < TOTAL_SIZE; i++)
+			for (unsigned int i = 0; i < TOTAL_SIZE; i++)
 				to_file2 << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
 
 
@@ -2748,7 +2950,7 @@ struct box {
 			ss >> substr; i_time = atoi(substr.c_str());
 			ss >> substr; i_write = atoi(substr.c_str());
 
-			for (int i = 0; i < TOTAL_SIZE; i++) {
+			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 				getline(from_file, str);
 				ss.str(""); ss.clear();
 				ss << str;
@@ -2780,14 +2982,14 @@ struct box_inherited:multi_cross
 	void set_type() {
 		l = new int[TOTAL_SIZE];
 		t = new int[TOTAL_SIZE];
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			l[i] = 0;
 			t[i] = 0;
 		}
 
 		unsigned int k;
-		for (int i = 0; i <= nx; i++) {
-			for (int j = 0; j <= ny; j++) {
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
 				k = i + offset*j;
 				if (i == 0) t[k] = 9;
 				if (i == nx) t[k] = 10;
@@ -2810,13 +3012,13 @@ struct box_inherited:multi_cross
 		n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
 		n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
 		n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
 		}
 
 		unsigned int k, it = 0;
-		for (int i = 0; i <= nx; i++) {
-			for (int j = 0; j <= ny; j++) {
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
 				k = i + offset*j;
 				if (t[k] == 0) {
 					n1[k] = k - 1;
@@ -2859,15 +3061,15 @@ struct box_inherited:multi_cross
 		for (unsigned int i = 0; i < (nx + 1)*(ny + 1); i++) {
 			I[i] = 0; J[i] = -1;
 		}
-		for (int i = 0; i < TOTAL_SIZE; i++) {
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			J_back[i] = -1;
 		}
 
 
 
-		unsigned int k, it = 0, in, ii, jj;
-		for (int i = 0; i <= nx; i++) {
-			for (int j = 0; j <= ny; j++) {
+		unsigned int k, it = 0; // in, ii, jj;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
 
 				k = i + offset*j;
 				I[k] = 1;
@@ -3032,6 +3234,9 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 }
 
 
+
+
+
 void signalHandler(int signum) {
 
 	cout << "Interrupt signal (" << signum << ") received.\n";
@@ -3051,11 +3256,6 @@ int main(int argc, char **argv) {
 	state = 0;
 	signal(SIGINT, signalHandler);
 
-	int devID = 0;
-	cudaSetDevice(devID);
-	cudaDeviceProp deviceProp;
-	cudaGetDeviceProperties(&deviceProp, devID);
-	printf("\nDevice %d: \"%s\"\n", devID, deviceProp.name);
 
 #ifdef __linux__ 
 	system("mkdir -p fields/");
@@ -3065,53 +3265,47 @@ int main(int argc, char **argv) {
 	CreateDirectoryA("fields", NULL);
 #endif
 
-	//allocate heap size
-	size_t limit = 1024 * 1024 * 1024;
-	cudaDeviceSetLimit(cudaLimitMallocHeapSize, limit);
-	cudaDeviceGetLimit(&limit, cudaLimitMallocHeapSize);
+
+	int devID = 0, deviceCount = 0;
+	cudaGetDeviceCount(&deviceCount);
+	if (deviceCount == 0) cout << "there is no detected GPU" << endl;
+	double heap_GB = 1.0;
 
 	double timer1, timer2;
 	double pi = 3.1415926535897932384626433832795;
 	double eps0 = 1e-5;
-	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;  //_d - device (GPU) 
-	double *C_h, *p_h, *ux_h, *uy_h, *vx_h, *vy_h, *mu_h, *p_true_h;  //_h - host (CPU)
-	double *psiav_array, *psiav_array_h, *psiav_d, *psiav_h, psiav0_h, eps_h;		 //  temporal variables
-	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, m, psiav, psiav0, eps, alpha_h, sinA_h, cosA_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h; //parameters 
+	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu, *zero;  //_d - device (GPU) 
+	double *C_h, *p_h, *vx_h, *vy_h, *mu_h, *p_true_h, *zero_h;  //_h - host (CPU)
+	double *psiav_array; 		 //  temporal variables //psiav0_h, eps_h *psiav_d, *psiav_array_h,   *psiav_h;
+	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, psiav, psiav0, eps, alpha_h, sinA_h, cosA_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h, dP_h; //parameters 
 	double Ek, Ek_old, Vmax, Q_in, Q_out, C_average, Cv;
-	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, niter, nout, nxout, nyout, offset_h, kk, k, mx, my, border, tt, write_i = 0, each = 1;					  //parameters
-	double Vxm, Vym, pm, Cm, each_t = 10.0, timeq = 0.0, C_av, C_plus, C_minus;
+	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0,  offset_h, kk, k = 0, tt, write_i = 0, each = 1;					  //parameters
+	double time_fields, time_recovery, time_display;
+	double timeq = 0.0, C_av, C_plus, C_minus;
+	double tecplot, limit_timeq;
 	bool copied = false;
-	unsigned int PHASE_h = 1;
+	unsigned int linear_pressure, fill_gradually, wetting;
+	unsigned int reset_timeq, invert_initial_C, reset_velocity, reset_pressure;
+	unsigned int PHASE_h, DIFFUSION_h;
+	string geometry;
 
 	//1 is 'yes' / true, 0 is 'no' / false
 	unsigned int picture_switch = 1; //write fields to a file?
 	unsigned int read_switch = 1; //read to continue or not? 
-	double tecplot;
 
 
-
-
-	//alternative geometry
-	/*
-	multi_line M_CROSS;
-	M_CROSS.generate_levels(30, 30, 30, 3, 5);
-	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
-	M_CROSS.set_neighbor();
-	M_CROSS.set_type();
-	pause
-	*/
-
-
-
-	
 	//reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
 
 	string file_name = "inp.dat";
 	if (argc == 2) file_name = argv[1];
 	ReadingFile File(file_name);
+
+
 	File.reading<unsigned int>(ny_h, "ny", 200);
 	File.reading<unsigned int>(nx_h, "nx", 200);
-	File.reading<double>(each_t, "each_t", 0.1);
+	File.reading<double>(time_fields, "time_fields", 0.5);
+	File.reading<double>(time_recovery, "time_recovery", 0.5);
+	File.reading<double>(time_display, "time_display", 0.1);
 	File.reading<unsigned int>(each, "each_ny", 10);
 	File.reading<unsigned int>(Matrix_X, "Matrix_X", 3);
 	File.reading<unsigned int>(Matrix_Y, "Matrix_Y", 3);
@@ -3119,86 +3313,142 @@ int main(int argc, char **argv) {
 	File.reading<double>(A_h, "A", -0.5);
 	File.reading<double>(Ca_h, "Ca", 4e-4);
 	File.reading<double>(Gr_h, "Gr", 0.0);
-	File.reading<double>(Pe_h, "Pa", 1e+4);
-	File.reading<double>(Re_h, "Ra", 1.0);
+	File.reading<double>(Pe_h, "Pe", 1e+4);
+	File.reading<double>(Re_h, "Re", 1.0);
 	File.reading<double>(alpha_h, "alpha", 0.0);
 	File.reading<double>(MM_h, "MM", 1.0);
+	File.reading<double>(dP_h, "P0", 1.0);
 	File.reading<double>(tecplot, "tecplot", 10000);
-	File.reading<unsigned int>(PHASE_h, "Program_type", 1);
-	File.reading<unsigned int>(read_switch, "read_switch", 1);
-	File.reading<unsigned int>(picture_switch, "picture_switch", 1);
+	File.reading<unsigned int>(PHASE_h, "Program_type", 1, 0, 1);
+	File.reading<unsigned int>(read_switch, "read_switch", 1, 0, 1);
+	File.reading<unsigned int>(picture_switch, "picture_switch", 1, 0, 1);
+	File.reading<double>(limit_timeq, "time_limit", 5000.0);
+	File.reading<unsigned int>(linear_pressure, "linear_pressure", 0, 0, 1);
+	File.reading<unsigned int>(fill_gradually, "fill_gradually", 0, 0, 1);
+	File.reading<unsigned int>(DIFFUSION_h, "pure_diffusion", 0, 0, 1);
+	File.reading<unsigned int>(wetting, "wetting", 0, 0, 2);
+	File.reading_string(geometry, "geometry", "matrix");
+	File.reading<unsigned int>(reset_timeq, "reset_time", 0, 0, 1);
+	File.reading<unsigned int>(invert_initial_C, "invert_C", 0, 0, 1);
+	File.reading<unsigned int>(reset_velocity, "reset_velocity", 0, 0, 1);
+	File.reading<unsigned int>(reset_pressure, "reset_pressure", 0, 0, 1);
+	File.reading<double>(heap_GB, "heap_GB", 1.0);
+	File.reading<int>(devID, "GPU_id", 0, 0, deviceCount - 1);
 
 
+
+
+	
+
+
+
+	//GPU setting
+	cudaSetDevice(devID);
+	cudaDeviceProp deviceProp;
+	cudaGetDeviceProperties(&deviceProp, devID);
+	printf("\nDevice %d: \"%s\"\n", devID, deviceProp.name);
+
+
+	//allocate heap size
+	size_t limit = (size_t)(1024 * 1024 * 1024* heap_GB);
+	cudaDeviceSetLimit(cudaLimitMallocHeapSize, limit);
+	cudaDeviceGetLimit(&limit, cudaLimitMallocHeapSize);
+
+
+
+
+
+	//the main class for geometry
+	multi_cross Geom;
 
 	hy_h = 1.0 / ny_h;	hx_h = hy_h;
-	tt = round(1.0 / tau_h);
+	tt = (unsigned int)round(1.0 / tau_h);
 	cosA_h = cos(alpha_h*pi / 180);
 	sinA_h = sin(alpha_h*pi / 180);
 	tau_p_h = 0.20*hx_h*hx_h;
 
+	if (geometry == "matrix") {
+		Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
+		//Geom.set_global_size_narrow_tubes(2*nx_h, nx_h, ny_h/2, Matrix_X, Matrix_Y);
+			Geom.set_type();
+		//Geom.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
+		//Geom.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
+		Geom.set_neighbor();
+		Geom.set_global_id();
+		cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl;
+		Geom.check();
+	}
+
+	else if (geometry == "matrix2") {
+		Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
+		Geom.set_global_id_B();
+		Geom.set_neighbor_B();
+		Geom.set_type_B();
+		Geom.check();
+		cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl;
+	}
+
+	else if (geometry == "box") {
+		Geom.set_global_size_box(nx_h, ny_h);
+		Geom.set_type_box();
+		Geom.set_neighbor_box();
+		Geom.set_global_id_box();
+		Geom.check();
+	}
+	
+	else if (geometry == "tube") {
+		Geom.set_global_size_box(nx_h, ny_h);
+		Geom.set_type_tube();
+		Geom.set_neighbor_box();
+		Geom.set_global_id_box();
+	}
+
+	else {
+		cout << "what are you trying to do?" << endl;
+		return 0;
+	}
+
 	
 
-	//the main class for geometry
-	
 
 
-	multi_cross M_CROSS;
-	M_CROSS.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
-	//M_CROSS.set_global_size_narrow_tubes(2*nx_h, nx_h, ny_h/2, Matrix_X, Matrix_Y);
-	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB"  << endl;
-	cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl << endl << endl;
-	
+
+
 
 	/*
-	M_CROSS.set_type();
-	//M_CROSS.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
-	//M_CROSS.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
-	M_CROSS.set_neighbor();
-	M_CROSS.set_global_id();
+		box_inherited Geom;
+		Geom.set_global_size(nx_h, ny_h);
+		Geom.set_type();
+		Geom.set_neighbor();
+		Geom.set_global_id();
+		cout << "SIZE = " << " " << Geom.TOTAL_SIZE << endl;
 	*/
-
-
-
+	
+	//alternative geometry
 	/*
-	M_CROSS.set_global_id_B();
-	M_CROSS.set_neighbor_B();	
-	M_CROSS.set_type_B();  
-	M_CROSS.check();
-	*/
+	multi_line Geom;
+	Geom.generate_levels(30, 30, 30, 3, 5);
+	cout << "approximate memory amount = " << 100 * Geom.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
+	Geom.set_neighbor();
+	Geom.set_type();
 	pause
-
-
-
-
-
-
-
-
-
-
-
-	/*
-	box_inherited M_CROSS;
-	M_CROSS.set_global_size(nx_h, ny_h);
-	cout << "approximate memory amount = " << 100 * M_CROSS.TOTAL_SIZE / 1024 / 1024 << " MB" << endl << endl << endl;
-	//pause
-	M_CROSS.set_type();
-	M_CROSS.set_neighbor();
-	M_CROSS.set_global_id();
 	*/
 
 
+
+
+	//int sss = 0;	for (int i = 0; i < Geom.TOTAL_SIZE; i++) if (Geom.t[i] == 9) sss++;	cout << "S=" << sss << endl; 
+
+
+
+	
 	//here we copy the arrays responsible for the geometry to GPU
-	stupid_step(M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.t, M_CROSS.J_back, M_CROSS.TOTAL_SIZE);
-
-
-	//int sss = 0;	for (int i = 0; i < M_CROSS.TOTAL_SIZE; i++) if (M_CROSS.t[i] == 9) sss++;	cout << "S=" << sss << endl; 
-
+	stupid_step(Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.t, Geom.J_back, Geom.TOTAL_SIZE);
 	cudaCheckError()
 
 	//total Length and Width of the porous matrix
-	Lx_h = hx_h * (M_CROSS.nxg);
-	Ly_h = hy_h * (M_CROSS.nyg);
+	Lx_h = hx_h * (Geom.nxg);
+	Ly_h = hy_h * (Geom.nyg);
 
 	cudaDeviceSynchronize();
 
@@ -3206,15 +3456,16 @@ int main(int argc, char **argv) {
 	//size setting
 	//you may just skip it, that is weird
 	offset_h = nx_h + 1;
-	unsigned int size_l = M_CROSS.TOTAL_SIZE; //Number of all nodes/elements 
+	unsigned int size_l = Geom.TOTAL_SIZE; //Number of all nodes/elements 
+	
 	if (size_l <= 1024 || size_l >= 1024 * 1024 * 1024) { cout << "data is too small or too large" << endl; return 0; }
 	std::cout << "size_l=" << size_l << endl;
 	size_t size_b /*size (in) bytes*/ = size_l * sizeof(double); //sizeof(double) = 8 bytes
 	size_t thread_x_d /*the dimension of x in a block*/ = 1024;
-	size_t threads_per_block = thread_x_d;
+	//size_t threads_per_block = thread_x_d;
 
-	dim3 gridD(ceil((size_l + 0.0) / thread_x_d));
-	dim3 blockD(thread_x_d);
+	dim3 gridD((unsigned int)ceil((size_l + 0.0) / thread_x_d));
+	dim3 blockD((unsigned int)thread_x_d);
 	std::cout << "gridD.x=" << gridD.x << endl;
 	std::cout << "blockD.x=" << blockD.x << endl;
 
@@ -3223,23 +3474,25 @@ int main(int argc, char **argv) {
 	unsigned long long int *Gp, *Np;
 	unsigned int s = 0;
 
+
+
 	unsigned int GN = size_l;
 	while (true)
 	{
 		s++;
-		GN = ceil(GN / (thread_x_d + 0.0));
+		GN = (unsigned int)ceil(GN / (thread_x_d + 0.0));
 		if (GN == 1)  break;
 	}
 	GN = size_l;
 	std::cout << "the number of reduction = " << s << endl;
 	Gp = new unsigned long long int[s];
 	Np = new unsigned long long int[s];
-	for (int i = 0; i < s; i++)
-		Gp[i] = GN = ceil(GN / (thread_x_d + 0.0));
+	for (unsigned int i = 0; i < s; i++)
+		Gp[i] = GN = (unsigned int)ceil(GN / (thread_x_d + 0.0));
 	Np[0] = size_l;
-	for (int i = 1; i < s; i++)
+	for (unsigned int i = 1; i < s; i++)
 		Np[i] = Gp[i - 1];
-	int last_reduce = pow(2, ceil(log2(Np[s - 1] + 0.0)));
+	int last_reduce = (int)pow(2, ceil(log2(Np[s - 1] + 0.0)));
 	std::cout << "last reduction = " << last_reduce << endl;
 	(s != 1) ? std::cout << "sub array for the Poisson solver = " << Np[1] << endl :
 		std::cout << "it shouldn't be here" << endl;
@@ -3248,14 +3501,37 @@ int main(int argc, char **argv) {
 
 	//allocating memory for arrays on CPU and initializing them 
 	{
-		C_h = (double*)malloc(size_b); 		mu_h = (double*)malloc(size_b);
-		p_h = (double*)malloc(size_b);		p_true_h = (double*)malloc(size_b);
-		vx_h = (double*)malloc(size_b);		vy_h = (double*)malloc(size_b);
-		psiav_h = (double*)malloc(sizeof(double)); 	psiav_array_h = (double*)malloc(size_b / threads_per_block);
-		for (int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
+		if (DIFFUSION_h == 1) {
+			C_h = (double*)malloc(size_b); 		mu_h = (double*)malloc(size_b);
+			p_true_h = (double*)malloc(size_b); zero_h = (double*)malloc(size_b);
+			p_h = vx_h = vy_h = zero_h; 
+			for (unsigned int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_true_h[l] = 0.0; zero_h[l] = 0.0;}
+		}
+		else {
+			C_h = (double*)malloc(size_b); 		mu_h = (double*)malloc(size_b);
+			p_h = (double*)malloc(size_b);		p_true_h = (double*)malloc(size_b);
+			vx_h = (double*)malloc(size_b);		vy_h = (double*)malloc(size_b);
+			//  psiav_h = (double*)malloc(sizeof(double)); 
+			//	psiav_array_h = (double*)malloc(size_b / threads_per_block);
+			for (unsigned int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
+		}
 	}
 
-	//additional allocation on CPU for statistics if necessary
+
+	if (linear_pressure == 1) {
+		Geom.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0 / Re_h);
+	}
+	if (fill_gradually == 1) {
+		double delta = sqrt(Ca_h / 0.5);
+		Geom.fill_gradually(C_h, hx_h, hy_h, delta, 0.5);
+	}
+
+
+
+
+	
+
+	//additional allocation on CPU for statistics if necessary // при какой еще необходимости!?
 	double *fx, *fy; signed char *mark;
 	{
 		fx = (double*)malloc(sizeof(double)*size_l);
@@ -3264,27 +3540,30 @@ int main(int argc, char **argv) {
 	}
 
 
-
-	//M_CROSS.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0/Re_h);
-
-	//double delta = sqrt(Ca_h / 0.5);
-	//M_CROSS.fill_gradually(C_h,hx_h,hy_h,delta);
-
+	
 
 	//allocating memory for arrays on GPU
 	{
-		cudaMalloc((void**)&C, size_b); 	cudaMalloc((void**)&C0, size_b);
-		cudaMalloc((void**)&p, size_b); 	cudaMalloc((void**)&p0, size_b);
-		cudaMalloc((void**)&ux, size_b);	cudaMalloc((void**)&uy, size_b);
-		cudaMalloc((void**)&vx, size_b);	cudaMalloc((void**)&vy, size_b);
-		cudaMalloc((void**)&mu, size_b);
-		(s != 1) ? cudaMalloc((void**)&psiav_array, sizeof(double)*Np[1]) : cudaMalloc((void**)&psiav_array, sizeof(double));
+		if (DIFFUSION_h == 1) {
+			cudaMalloc((void**)&C, size_b); 	cudaMalloc((void**)&C0, size_b);
+			cudaMalloc((void**)&mu, size_b);    cudaMalloc((void**)&zero, size_b);
+			p = p0 = ux = uy = vx = vy = zero;
+		}
+		else {
+			cudaMalloc((void**)&C, size_b); 	cudaMalloc((void**)&C0, size_b);
+			cudaMalloc((void**)&p, size_b); 	cudaMalloc((void**)&p0, size_b);
+			cudaMalloc((void**)&ux, size_b);	cudaMalloc((void**)&uy, size_b);
+			cudaMalloc((void**)&vx, size_b);	cudaMalloc((void**)&vy, size_b);
+			cudaMalloc((void**)&mu, size_b);
+			(s != 1) ? cudaMalloc((void**)&psiav_array, sizeof(double)*Np[1]) : cudaMalloc((void**)&psiav_array, sizeof(double));
+		}
 	}
 
 	//you never guess what it is, so forget
 	arr[0] = p;
-	for (int i = 1; i <= s; i++)
+	for (unsigned int i = 1; i <= s; i++)
 		arr[i] = psiav_array;
+
 
 
 
@@ -3299,20 +3578,50 @@ int main(int argc, char **argv) {
 	//if not we start at t = 0, otherwise we continue from the saved data
 	bool file_exists = read.good();
 	if (read_switch == 0) file_exists = false;
-	if (file_exists == true) { read_switch = 1; 	std::cout << "CONTINUE" << endl; }
-	else { read_switch = 0;	iter = 0; std::cout << "from the Start" << endl; }
+
+	if (file_exists == true) { 
+		read_switch = 1; 	
+		std::cout << endl << "CONTINUE" << endl;
+	}
+	else { 
+		read_switch = 0;
+		iter = 0; 
+		std::cout << endl << "from the Start" << endl;
+	}
 
 	//continue
 	if (read_switch == 1) {
-		integrals.open("integrals.dat", std::ofstream::app);
-		M_CROSS.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
+		Geom.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
+		if (reset_timeq == 0) {
+			integrals.open("integrals.dat", std::ofstream::app);
+		}
+		else if (reset_timeq == 1)
+		{
+			integrals.open("integrals.dat");
+			iter = 0;
+			write_i = 0;
+			timeq = 0;
+			if (invert_initial_C == 1)
+				for (unsigned int l = 0; l < size_l; l++)
+					C_h[l] = C_h[l] * (-1);
+			if (reset_velocity == 1)
+				for (unsigned int l = 0; l < size_l; l++) {
+					vx_h[l] = 0.0;
+					vy_h[l] = 0.0;
+				}
+			if (reset_pressure == 1)
+				for (unsigned int l = 0; l < size_l; l++)
+					p_h[l] = 0.0;
+		}
+		
 	}
 
 	//from the start
-	if (read_switch == 0) integrals.open("integrals.dat");
+	if (read_switch == 0) 
+		integrals.open("integrals.dat");
 
 
-
+	
 	//copying values from host variables to device ones
 	{
 		cudaMemcpy(C, C_h, size_b, cudaMemcpyHostToDevice); 	cudaMemcpy(C0, C_h, size_b, cudaMemcpyHostToDevice);
@@ -3345,14 +3654,27 @@ int main(int argc, char **argv) {
 		cudaMemcpyToSymbol(tau_p, &tau_p_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(sinA, &sinA_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(cosA, &cosA_h, sizeof(double), 0, cudaMemcpyHostToDevice);
-		cudaMemcpyToSymbol(OFFSET, &M_CROSS.OFFSET, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(Mx, &M_CROSS.Mx, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(My, &M_CROSS.My, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(Msize, &M_CROSS.Msize, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(Moffset, &M_CROSS.Moffset, sizeof(int), 0, cudaMemcpyHostToDevice);
-		cudaMemcpyToSymbol(TOTAL_SIZE, &M_CROSS.TOTAL_SIZE, sizeof(int), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(OFFSET, &Geom.OFFSET, sizeof(int), 0, cudaMemcpyHostToDevice);
+//		cudaMemcpyToSymbol(Mx, &Geom.Mx, sizeof(int), 0, cudaMemcpyHostToDevice);
+//		cudaMemcpyToSymbol(My, &Geom.My, sizeof(int), 0, cudaMemcpyHostToDevice);
+//		cudaMemcpyToSymbol(Msize, &Geom.Msize, sizeof(int), 0, cudaMemcpyHostToDevice);
+//		cudaMemcpyToSymbol(Moffset, &Geom.Moffset, sizeof(int), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(TOTAL_SIZE, &Geom.TOTAL_SIZE, sizeof(int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(PHASE, &PHASE_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(dP, &dP_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 	}
+
+
+
+
+	{
+		cout << "approximate memory amount = " << 100 * Geom.TOTAL_SIZE / 1024 / 1024 << " MB" << endl;
+		PrintVar(wetting)
+		PrintVar(DIFFUSION_h)
+		PrintVar(geometry)
+	}
+
+
 
 	//just printing parameters from GPU to be confident they are passed correctly 
 	hello << <1, 1 >> > ();
@@ -3369,9 +3691,7 @@ int main(int argc, char **argv) {
 
 
 
-	//M_CROSS.fast_test_writing(C_h);
-
-
+	//Geom.fast_test_writing(C_h);
 
 
 
@@ -3386,7 +3706,7 @@ int main(int argc, char **argv) {
 	timer1 = clock() / CLOCKS_PER_SEC;
 
 
-	//M_CROSS.write_field(C_h, "test", 0, 1);
+	//Geom.write_field(C_h, "test", 0, 1);
 
 	//write the file with parameters
 	//this step was written for making movies
@@ -3398,7 +3718,7 @@ int main(int argc, char **argv) {
 			ofstream to_file("fields\\param.dat");
 	#endif
 	#define space << " " << 
-	to_file << M_CROSS.nxg / each space M_CROSS.nyg / each space hx_h*each space hy_h*each space Lx_h space Ly_h
+	to_file << Geom.nxg / each space Geom.nyg / each space hx_h*each space hy_h*each space Lx_h space Ly_h
 		space Gr_h space Ca_h space Pe_h space Re_h space A_h space MM_h space alpha_h
 		<< endl;
 	to_file.close();
@@ -3406,74 +3726,107 @@ int main(int argc, char **argv) {
 
 
 
-
-
-
-	true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
 	
+
+	
+
+	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+
 
 	// the main time loop of the whole calculation procedure
 	while (true) {
 
-
+		
 		iter = iter + 1; 	timeq = timeq + tau_h;
 
 
-		//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
-		{
-			if (PHASE_h == 1) 
-				chemical_potential << <gridD, blockD >> > (mu, C);
-
-			quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-
-			if (PHASE_h == 1)
-				concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
-				//concentration_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
-				//concentration_no_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
-			else if (PHASE_h == 0) {
-				//if (timeq < 1)
-				concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
-				//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
-			}
+		if (DIFFUSION_h == 1) {
+			
+				if (PHASE_h == 1) {
+					chemical_potential << <gridD, blockD >> > (mu, C);
+					concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+				}
+				else if (PHASE_h == 0) {
+					
+					concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
+					
+				}
+				
+			swap_one << <gridD, blockD >> > (C0, C);
+			
 		}
-	
-		//2nd step, Poisson equation for pressure 
-		{
-			eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
-			//while (eps > eps0*psiav0)
-			while (eps > eps0*psiav0 && k < kk) 
+		else {
+
+
+			//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
 			{
+				if (PHASE_h == 1)
+					chemical_potential << <gridD, blockD >> > (mu, C);
 
-				psiav = 0.0;  k++;
-				Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
+				quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 
-				for (int i = 0; i < s; i++)
-					reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
-				swap_one << <gridD, blockD >> > (p0, p);
-				cudaMemcpy(&psiav, psiav_array, sizeof(double), cudaMemcpyDeviceToHost);
-
-				eps = abs(psiav - psiav0); 	psiav0 = psiav;
-
-				if (k % 1000 == 0) {
-					cout << "p_iter=" << k << endl;
+				if (PHASE_h == 1) {
+					switch (wetting)
+					{
+					case 0: //as it is
+						concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+						break;
+					case 1: //const initial concentration at walls, which is not washed out
+						concentration_no_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+						break;
+					case 2: //ongoing concentration devours initial one
+						concentration_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+						break;
+					default:
+						break;
+					}
+				}
+				else if (PHASE_h == 0) {
+					//if (timeq < 1)
+					concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
+					//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
 				}
 			}
 
+			
+
+			//2nd step, Poisson equation for pressure 
+			{
+				eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
+				//while (eps > eps0*psiav0)
+				while (eps > eps0*psiav0 && k < kk)
+				{
+
+					psiav = 0.0;  k++;
+					Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
+
+					for (unsigned int i = 0; i < s; i++)
+						reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
+					swap_one << <gridD, blockD >> > (p0, p);
+					cudaMemcpy(&psiav, psiav_array, sizeof(double), cudaMemcpyDeviceToHost);
+
+					eps = abs(psiav - psiav0); 	psiav0 = psiav;
+
+					if (k % 1000 == 0) {
+						cout << "p_iter=" << k << endl;
+					}
+				}
+
+
+			}
+			kk = k;
+			//cout << "p_iter=" << k << endl;
+
+			//3rd step, velocity correction and swapping field values
+			velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
+
+			swap_3 << <gridD, blockD >> > (ux, vx, uy, vy, C0, C);
+
 
 		}
-		kk = k;
-		//cout << "p_iter=" << k << endl;
 		
-		//3rd step, velocity correction and swapping field values
-		velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
-
-		swap_3 << <gridD, blockD >> > (ux, vx, uy, vy, C0, C);
-
-
-
-
-		//4th step, printing resulrs, writing data and whatever you want
-		if (iter % (tt / 10) == 0 || iter == 1) {
+		//4th step, printing results, writing data and whatever you want
+		if (iter % (int)(tt *time_display) == 0 || iter == 1) {
 			cout << setprecision(15) << endl;
 			cout << fixed << endl;
 			cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3483,19 +3836,19 @@ int main(int argc, char **argv) {
 			cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 			copied = true;
 
-			true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
-				tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
+			true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
+				tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
 
-			double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av;
-			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
-			VFR(vx_h, M_CROSS.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
-			C_statistics(M_CROSS.TOTAL_SIZE, hx_h, hy_h, M_CROSS.t, C_h, C_av, C_plus, C_minus);
-			len = M_CROSS.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);
-			ten = Ca_h / len * M_CROSS.tension(hx_h, hy_h, C_h);
-			vol = M_CROSS.volume(hx_h, hy_h, C_h, 0.2);
+			double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av; 
+			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax); 
+			VFR(vx_h, Geom.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv); 
+			C_statistics(Geom.TOTAL_SIZE, hx_h, hy_h, Geom.t, C_h, C_av, C_plus, C_minus); 
+			len = Geom.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);  
+			ten = Ca_h / len * Geom.tension(hx_h, hy_h, C_h);
+			vol = Geom.volume(hx_h, hy_h, C_h, 0.2);
 			width = vol / len;
-			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av, 0.05);
-			M_CROSS.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
+			Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av, 0.05);
+			Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
 			
 
 			timer
@@ -3533,7 +3886,7 @@ int main(int argc, char **argv) {
 
 
 		//fields writing
-		if (iter % (int(each_t * tt)) == 0 || iter == 1)
+		if (iter % (int(time_fields * tt)) == 0 || iter == 1)
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3541,23 +3894,23 @@ int main(int argc, char **argv) {
 				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-				true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
-					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
+				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
+					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
 				copied = true;
 			}
 			write_i++;
 			stringstream ss; string file_name;	ss.str(""); ss.clear();
 			ss << write_i;		file_name = ss.str();
 
-			M_CROSS.write_field(C_h, file_name, timeq, each);
-			//M_CROSS.write_field(vx_h, "vx" + file_name, timeq, each);
-			//M_CROSS.write_field(vy_h, "vy" + file_name, timeq, each);
-			//M_CROSS.write_field(p_h, "p" + file_name, timeq, each);
-			//M_CROSS.write_field(mu_h, "mu" + file_name, timeq, each);
+			Geom.write_field(C_h, file_name, timeq, each);
+			//Geom.write_field(vx_h, "vx" + file_name, timeq, each);
+			//Geom.write_field(vy_h, "vy" + file_name, timeq, each);
+			//Geom.write_field(p_h, "p" + file_name, timeq, each);
+			//Geom.write_field(mu_h, "mu" + file_name, timeq, each);
 		}
 
 		//fields writting for stupid tecplot
-		if (tecplot!=0 && (iter % (int(each_t * tt)) == 0 || iter == 1))
+		if (tecplot!=0 && (iter % (int(time_fields * tt)) == 0 || iter == 1))
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3565,17 +3918,17 @@ int main(int argc, char **argv) {
 				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-				true_pressure(p_h, p_true_h, C_h, mu_h, M_CROSS.t, M_CROSS.n1, M_CROSS.n2, M_CROSS.n3, M_CROSS.n4, M_CROSS.J_back,
-					tau_h, M_CROSS.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, M_CROSS.OFFSET, sinA_h, cosA_h, PHASE_h);
+				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
+					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
 				copied = true;
 			}
-			M_CROSS.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
+			Geom.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
 		}
 
 
 
 		//recovery fields writing
-		if (iter % (int)(tt/4) == 0)
+		if (iter % (int)(tt*time_recovery) == 0 || timeq > limit_timeq)
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3585,16 +3938,21 @@ int main(int argc, char **argv) {
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 				copied = true;
 			}
-			M_CROSS.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
+			Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
 		}
 		copied = false;
 		 // the end of 4th step
 
 
-		if (iter*tau_h > 5000) return 0;
+		if (timeq > limit_timeq ) return 0;
 
 
 
 	} //the end of the main time loop
+
+
+
+
+
 
 }
