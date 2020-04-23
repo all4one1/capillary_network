@@ -444,10 +444,10 @@ __global__ void chemical_potential(double *mu, double *C)
 			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_up(l, mu));
 			break;
 		case 9: //inlet (from left)
-			mu[l] = -Ca*dx2_forward(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l);
+			mu[l] = -Ca*dx2_forward(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_forward(l, mu);
 			break;
 		case 10://outlet (to right)
-			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l);
+			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
 			break;
 		default:
 			break;
@@ -455,6 +455,17 @@ __global__ void chemical_potential(double *mu, double *C)
 
 	}
 }
+
+__global__ void chemical_potential_Gr(double *mu)
+{
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+		mu[l] = -Gr* r_gamma(l);
+	}
+}
+
 
 __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, double *C0, double *mu) {
 
@@ -467,20 +478,18 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 		{
 		case 0: //inner
 				//ux_d
-			ux[l] = vx[l]
+			ux[l] = vx[l] //+ Gr*C0[l] * x_gamma(l)
 				+ tau  * (
 					-vx[l] * dx1(l, vx) - vy[l] * dy1(l, vx)
 					+ (dx2(l, vx) + dy2(l, vx)) / Re
 					- C0[l] * dx1(l, mu) / MM
-					+ Gr*C0[l] * x_gamma(l)
 					);
 			//uy_d
-			uy[l] = vy[l]
+			uy[l] = vy[l] //+ Gr*C0[l] * y_gamma(l)
 				+ tau  * (
 					-vx[l] * dx1(l, vy) - vy[l] * dy1(l, vy)
 					+ (dx2(l, vy) + dy2(l, vy)) / Re
 					- C0[l] * dy1(l, mu) / MM
-					+ Gr*C0[l] * y_gamma(l)
 					);
 			break;
 		case 1: //left rigid
@@ -3290,6 +3299,7 @@ int main(int argc, char **argv) {
 	string geometry;
 
 	//1 is 'yes' / true, 0 is 'no' / false
+	unsigned int clean_fields;
 	unsigned int picture_switch = 1; //write fields to a file?
 	unsigned int read_switch = 1; //read to continue or not? 
 
@@ -3306,7 +3316,7 @@ int main(int argc, char **argv) {
 	File.reading<double>(time_fields, "time_fields", 0.5);
 	File.reading<double>(time_recovery, "time_recovery", 0.5);
 	File.reading<double>(time_display, "time_display", 0.1);
-	File.reading<unsigned int>(each, "each_ny", 10);
+	File.reading<unsigned int>(each, "each_xy", 10);
 	File.reading<unsigned int>(Matrix_X, "Matrix_X", 3);
 	File.reading<unsigned int>(Matrix_Y, "Matrix_Y", 3);
 	File.reading<double>(tau_h, "tau", 5.0e-5);
@@ -3317,10 +3327,10 @@ int main(int argc, char **argv) {
 	File.reading<double>(Re_h, "Re", 1.0);
 	File.reading<double>(alpha_h, "alpha", 0.0);
 	File.reading<double>(MM_h, "MM", 1.0);
-	File.reading<double>(dP_h, "P0", 1.0);
+	File.reading<double>(dP_h, "dP", 1.0);
 	File.reading<double>(tecplot, "tecplot", 10000);
-	File.reading<unsigned int>(PHASE_h, "Program_type", 1, 0, 1);
-	File.reading<unsigned int>(read_switch, "read_switch", 1, 0, 1);
+	File.reading<unsigned int>(PHASE_h, "Phase_field", 1, 0, 1);
+	File.reading<unsigned int>(read_switch, "read_recovery", 1, 0, 1);
 	File.reading<unsigned int>(picture_switch, "picture_switch", 1, 0, 1);
 	File.reading<double>(limit_timeq, "time_limit", 5000.0);
 	File.reading<unsigned int>(linear_pressure, "linear_pressure", 0, 0, 1);
@@ -3334,7 +3344,7 @@ int main(int argc, char **argv) {
 	File.reading<unsigned int>(reset_pressure, "reset_pressure", 0, 0, 1);
 	File.reading<double>(heap_GB, "heap_GB", 1.0);
 	File.reading<int>(devID, "GPU_id", 0, 0, deviceCount - 1);
-
+	//File.reading<unsigned int>(clean_fields, "clean_fields", 1, 0, 1);
 
 
 
@@ -3354,8 +3364,10 @@ int main(int argc, char **argv) {
 	cudaDeviceSetLimit(cudaLimitMallocHeapSize, limit);
 	cudaDeviceGetLimit(&limit, cudaLimitMallocHeapSize);
 
-
-
+	//if (clean_fields == 1) {
+		//system("exec rm -r /fields/*");
+		//cout << "fields cleaned" << endl;
+	//}
 
 
 	//the main class for geometry
@@ -3740,7 +3752,7 @@ int main(int argc, char **argv) {
 		iter = iter + 1; 	timeq = timeq + tau_h;
 
 
-		if (DIFFUSION_h == 1) {
+		if (DIFFUSION_h == 1) { //only diffusion
 			
 				if (PHASE_h == 1) {
 					chemical_potential << <gridD, blockD >> > (mu, C);
@@ -3755,17 +3767,16 @@ int main(int argc, char **argv) {
 			swap_one << <gridD, blockD >> > (C0, C);
 			
 		}
-		else {
+		else { //flow
 
 
 			//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
 			{
-				if (PHASE_h == 1)
+				if (PHASE_h == 1) {
 					chemical_potential << <gridD, blockD >> > (mu, C);
 
-				quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+					quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 
-				if (PHASE_h == 1) {
 					switch (wetting)
 					{
 					case 0: //as it is
@@ -3782,6 +3793,8 @@ int main(int argc, char **argv) {
 					}
 				}
 				else if (PHASE_h == 0) {
+					chemical_potential_Gr << <gridD, blockD >> > (mu);
+					quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 					//if (timeq < 1)
 					concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
 					//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
