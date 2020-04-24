@@ -2068,6 +2068,38 @@ struct multi_cross {
 		from_file.close();
 	}
 
+
+	void read_concentration(double *C, string file_name, int column, int skip_lines = 1, int invert_C = 1) {
+		ifstream from_file(file_name);
+
+		string str;
+		string substr;
+		stringstream ss;
+
+
+		for (int k = 0; k < skip_lines; k++) {
+			getline(from_file, str);
+		}
+
+
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			getline(from_file, str);
+			ss.str(""); ss.clear();
+			ss << str;
+
+			for (int k = 0; k < column; k++) {
+				ss >> substr;
+			}
+			C[i] = atof(substr.c_str());
+			if (invert_C == 1)
+				C[i] = C[i] * (-1);
+		}
+
+
+		from_file.close();
+	}
+
+
 	void linear_pressure(double *p, double hx, double hy, double cosA, double sinA, double Lx, double Ly, double coefficient = 1) {
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			p[l] = coefficient*( (Lx - hx*iG(l))*cosA -  (Ly - hy*jG(l))*sinA);
@@ -3293,7 +3325,7 @@ int main(int argc, char **argv) {
 	double timeq = 0.0, C_av, C_plus, C_minus;
 	double tecplot, limit_timeq;
 	bool copied = false;
-	unsigned int linear_pressure, fill_gradually, wetting;
+	unsigned int linear_pressure, fill_gradually, wetting, read_C;
 	unsigned int reset_timeq, invert_initial_C, reset_velocity, reset_pressure;
 	unsigned int PHASE_h, DIFFUSION_h;
 	string geometry;
@@ -3344,6 +3376,7 @@ int main(int argc, char **argv) {
 	File.reading<unsigned int>(reset_pressure, "reset_pressure", 0, 0, 1);
 	File.reading<double>(heap_GB, "heap_GB", 1.0);
 	File.reading<int>(devID, "GPU_id", 0, 0, deviceCount - 1);
+	File.reading<unsigned int>(read_C, "read_concentration", 0, 0, 1);
 	//File.reading<unsigned int>(clean_fields, "clean_fields", 1, 0, 1);
 
 
@@ -3379,47 +3412,49 @@ int main(int argc, char **argv) {
 	sinA_h = sin(alpha_h*pi / 180);
 	tau_p_h = 0.20*hx_h*hx_h;
 
-	if (geometry == "matrix") {
-		Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
-		//Geom.set_global_size_narrow_tubes(2*nx_h, nx_h, ny_h/2, Matrix_X, Matrix_Y);
+
+	{
+		if (geometry == "matrix") {
+			Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
+			//Geom.set_global_size_narrow_tubes(2*nx_h, nx_h, ny_h/2, Matrix_X, Matrix_Y);
 			Geom.set_type();
-		//Geom.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
-		//Geom.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
-		Geom.set_neighbor();
-		Geom.set_global_id();
-		cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl;
-		Geom.check();
-	}
+			//Geom.left_normal_in((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
+			//Geom.left_normal_out((Matrix_Y - 1) / 2, (Matrix_Y - 1) / 2);
+			Geom.set_neighbor();
+			Geom.set_global_id();
+			cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl;
+			Geom.check();
+		}
 
-	else if (geometry == "matrix2") {
-		Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
-		Geom.set_global_id_B();
-		Geom.set_neighbor_B();
-		Geom.set_type_B();
-		Geom.check();
-		cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl;
-	}
+		else if (geometry == "matrix2") {
+			Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
+			Geom.set_global_id_B();
+			Geom.set_neighbor_B();
+			Geom.set_type_B();
+			Geom.check();
+			cout << "Matrix_X = " << Matrix_X << ", Matrix_Y = " << Matrix_Y << endl;
+		}
 
-	else if (geometry == "box") {
-		Geom.set_global_size_box(nx_h, ny_h);
-		Geom.set_type_box();
-		Geom.set_neighbor_box();
-		Geom.set_global_id_box();
-		Geom.check();
-	}
-	
-	else if (geometry == "tube") {
-		Geom.set_global_size_box(nx_h, ny_h);
-		Geom.set_type_tube();
-		Geom.set_neighbor_box();
-		Geom.set_global_id_box();
-	}
+		else if (geometry == "box") {
+			Geom.set_global_size_box(nx_h, ny_h);
+			Geom.set_type_box();
+			Geom.set_neighbor_box();
+			Geom.set_global_id_box();
+			Geom.check();
+		}
 
-	else {
-		cout << "what are you trying to do?" << endl;
-		return 0;
-	}
+		else if (geometry == "tube") {
+			Geom.set_global_size_box(nx_h, ny_h);
+			Geom.set_type_tube();
+			Geom.set_neighbor_box();
+			Geom.set_global_id_box();
+		}
 
+		else {
+			cout << "what are you trying to do?" << endl;
+			return 0;
+		}
+	}
 	
 
 
@@ -3571,7 +3606,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	//you never guess what it is, so forget
+	//for Poisson procedure shortness 
 	arr[0] = p;
 	for (unsigned int i = 1; i <= s; i++)
 		arr[i] = psiav_array;
@@ -3599,6 +3634,10 @@ int main(int argc, char **argv) {
 		read_switch = 0;
 		iter = 0; 
 		std::cout << endl << "from the Start" << endl;
+		if (read_C == 1) {
+			std::cout << "initial concentration reading" << endl;
+			Geom.read_concentration(C_h, "recovery.dat", 4, 1, 1);
+		}
 	}
 
 	//continue
@@ -3609,6 +3648,7 @@ int main(int argc, char **argv) {
 		}
 		else if (reset_timeq == 1)
 		{
+			cout << "reset time" << endl;
 			integrals.open("integrals.dat");
 			iter = 0;
 			write_i = 0;
@@ -3708,9 +3748,10 @@ int main(int argc, char **argv) {
 
 
 
+	Geom.write_field(C_h, "0", timeq, each);
 
 
-	pause
+	
 
 
 
@@ -3745,6 +3786,8 @@ int main(int argc, char **argv) {
 	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
 
 
+
+	pause
 	// the main time loop of the whole calculation procedure
 	while (true) {
 

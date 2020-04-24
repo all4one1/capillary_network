@@ -1,24 +1,37 @@
-ny = 100	// nodes of the pore width
-nx = 200 // nodes of the tube length
-time_fields = 1.0  // fraction of time to write fields to a file
-time_recovery = 50.0 // fraction of time to save data
-time_display = 0.5 // fraction of time to display some data and write integrals
+
+time_limit = 5000.0
+time_fields = 0.5  // fraction of time to write fields to a file
+time_recovery = 2.0 // fraction of time to save data
+time_display = 0.2 // fraction of time to display some data and write integrals
 each_xy = 5 //each #th node to write to a file
+
+
 Matrix_X = 1    //Nx elements of the porous matrix
 Matrix_Y = 1 	//Ny elements of the porous matrix
+ny = 100	// nodes of the pore width
+nx = 200 // nodes of the tube length
 tau = 1.0e-5  
 A = -0.5  
 Ca = 4e-4  
-Gr = 0.7
+Gr = 0.0
 Pe = 1e+4
 Re = 100
 alpha = 90
 MM = 1
+
+
+
 tecplot = 10000 // blanked value, set zero if you dont want to use tecplot
 Phase_field = 1 // 0  Program type, 1 is phase field, 0 is single phase flow
-read_recovery = 0
-pure_diffusion = 0
+pure_diffusion = 0 // 0 is just ordinary calculation, 1 is pure diffusion
 geometry = matrix
-fill_gradually = 1
-dP = 0.1
-GPU_id = 1
+
+wetting = 0
+read_recovery = 0
+read_concentration = 1  // ignored if read_recovery = 1
+
+
+reset_time = 1 // switched off is read_recovery = 0
+invert_C = 1    // switched off is reset_time = 0
+reset_velocity = 1 	// switched off is reset_time = 0
+reset_pressure = 1	// switched off is reset_time = 0
