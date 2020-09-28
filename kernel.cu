@@ -20,7 +20,6 @@
 #include "windows.h"
 #endif
 
-
 using namespace std;
 using std::cout;
 int state;
@@ -28,6 +27,8 @@ int state;
 #define Pi 3.1415926535897932384626433832795
 #define pause system("pause");
 #define timer timer2 = clock()/ CLOCKS_PER_SEC; 	cout << "time (seconds)= " << (timer2 - timer1) << endl;
+
+
 #define cudaCheckError() {                                          \
 	cudaError_t e = cudaGetLastError();                                \
 if (e != cudaSuccess) {\
@@ -202,7 +203,7 @@ public:
 	}
 
 	void open_file(string file_name) {
-		read.open(file_name);
+		read.open(file_name.c_str());
 		if (read.good()) {
 			cout << endl  << "the parameter file \"" << file_name << "\" has been read " << endl << endl;
 			oss << read.rdbuf();
@@ -391,6 +392,119 @@ __device__  double dy2_down(unsigned int l, double *f) {
 	return (2.0 * f[l] - 5.0 * f[n4[l]] + 4.0 * f[n4[n4[l]]] - f[n4[n4[n4[l]]]]) / hy / hy;
 }
 
+__device__ double extrapolate_back(unsigned int l, double *f) {
+	return	2.0*f[n3[l]] - f[n3[n3[l]]];
+}
+__device__ double extrapolate_forward(unsigned int l, double *f) {
+	return	2.0*f[n1[l]] - f[n1[n1[l]]];
+}
+__device__ double extrapolate_down(unsigned int l, double *f) {
+	return	2.0*f[n2[l]] - f[n2[n2[l]]];
+}
+__device__ double extrapolate_up(unsigned int l, double *f) {
+	return	2.0*f[n4[l]] - f[n4[n4[l]]];
+}
+
+__device__ double VgradF(unsigned int l, double *f, double *vx, double *vy) {
+	double val = 0;
+	double VR, VL, VU, VD;
+	double FR, FL, FU, FD;
+	FR = FL = FU = FD = 0;
+
+
+	VR = (vx[n3[l]] + vx[l])*0.5;
+	VL = (vx[l] + vx[n1[l]])*0.5;
+
+	if (VR > 0) FR = f[l];
+	else if (VR < 0) FR = f[n3[l]];
+
+	if (VL > 0) FL = f[n1[l]];
+	else if (VL < 0) FL = f[l];
+
+	val += (VR*FR - VL*FL) / hx;
+	
+
+	
+	VU = (vy[n2[l]] + vy[l])*0.5;
+	VD = (vy[l] + vy[n4[l]])*0.5;
+
+	if (VU > 0) FU = f[l];
+	else if (VU < 0) FU = f[n2[l]];
+
+	if (VD > 0) FD = f[n4[l]];
+	else if (VD < 0) FD = f[l];
+
+	val += (VU*FU - VD*FD) / hy;
+	
+
+
+	return val;
+}
+__device__ double VgradF_forward(unsigned int l, double *f, double *vx, double *vy) {
+	double val = 0;
+	double VR, VL, VU, VD;
+	double FR, FL, FU, FD;
+	FR = FL = FU = FD = 0;
+
+
+	VR = (vx[n3[l]] + vx[l])*0.5;
+	VL = (vx[l] + vx[n1[l]])*0.5;
+
+	if (VR > 0) FR = f[l];
+	else if (VR < 0) FR = f[n3[l]];
+
+	if (VL > 0) FL = f[n1[l]];
+	else if (VL < 0) FL = f[l];
+
+	val += (VR*FR - VL*FL) / hx;
+
+
+
+	VU = (vy[n2[l]] + vy[l])*0.5;
+	VD = (vy[l] + vy[n4[l]])*0.5;
+
+	if (VU > 0) FU = f[l];
+	else if (VU < 0) FU = f[n2[l]];
+
+	if (VD > 0) FD = f[n4[l]];
+	else if (VD < 0) FD = f[l];
+
+	val += (VU*FU - VD*FD) / hy;
+
+
+
+	return val;
+}
+
+
+
+/*
+#define dx1(l, f)  0.5*(f[n3[l]] - f[n1[l]]) / hx
+#define dy1(l, f)  0.5*(f[n2[l]] - f[n4[l]]) / hy
+
+#define dx2(l, f)  (f[n3[l]] - 2.0*f[l] + f[n1[l]]) / hx / hx
+#define dy2(l, f) (f[n2[l]] - 2.0*f[l] + f[n4[l]]) / hy / hy
+
+
+#define dx1_eq_0_forward(l, f)  (4.0*f[n3[l]] - f[n3[n3[l]]]) / 3.0
+#define dx1_eq_0_back(l, f)  (4.0*f[n1[l]] - f[n1[n1[l]]]) / 3.0
+#define dy1_eq_0_up(l, f)  (4.0*f[n2[l]] - f[n2[n2[l]]]) / 3.0
+#define dy1_eq_0_down(l, f)  (4.0*f[n4[l]] - f[n4[n4[l]]]) / 3.0
+#define dx1_forward(l, f)  -0.5*(3.0*f[l] - 4.0*f[n3[l]] + f[n3[n3[l]]]) / hx
+#define dx1_back(l, f)   0.5*(3.0*f[l] - 4.0*f[n1[l]] + f[n1[n1[l]]]) / hx
+#define dy1_up(l, f)   -0.5*(3.0*f[l] - 4.0*f[n2[l]] + f[n2[n2[l]]]) / hy
+#define dy1_down(l, f)  0.5*(3.0*f[l] - 4.0*f[n4[l]] + f[n4[n4[l]]]) / hy
+
+
+#define dx2_forward(l, f)  (2.0 * f[l] - 5.0 * f[n3[l]] + 4.0 * f[n3[n3[l]]] - f[n3[n3[n3[l]]]]) / hx / hx
+#define dx2_back(l, f)  (2.0 * f[l] - 5.0 * f[n1[l]] + 4.0 * f[n1[n1[l]]] - f[n1[n1[n1[l]]]]) / hx / hx
+#define dy2_up(l, f)  (2.0 * f[l] - 5.0 * f[n2[l]] + 4.0 * f[n2[n2[l]]] - f[n2[n2[n2[l]]]]) / hy / hy
+#define dy2_down(l, f)  (2.0 * f[l] - 5.0 * f[n4[l]] + 4.0 * f[n4[n4[l]]] - f[n4[n4[n4[l]]]]) / hy / hy
+*/
+
+
+
+
 __device__  double r_gamma(unsigned int l)
 {
 	return (J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA +    //cosA*x
@@ -402,8 +516,6 @@ __device__  double x_gamma(unsigned int l) {
 __device__  double y_gamma(unsigned int l) {
 	return 	(J_back[l] / OFFSET) * hy*sinA;					   //sinA*y
 }
-
-
 
 
 
@@ -584,6 +696,8 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 	}
 }
 
+
+
 __global__ void concentration(double *C, double *C0, double *vx, double *vy, double *mu) {
 
 
@@ -626,6 +740,73 @@ __global__ void concentration(double *C, double *C0, double *vx, double *vy, dou
 			break;
 		case 8: //left lower rigid corner
 			C[l] = 0.5* (dx1_eq_0_forward(l, C0) + dy1_eq_0_up(l, C0));
+			break;
+		case 9: //inlet (from left)
+			C[l] = -0.5;
+			break;
+		case 10://outlet (to right)
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+
+__global__ void concentration_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-vx[l] * dx1(l, C0)
+					- vy[l] * dy1(l, C0)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			if (C0[n3[l]] < C0[l])
+			C[l] = C0[n3[l]];
+			break;
+		case 2: //upper rigid
+			if (C0[n4[l]] < C0[l])
+			C[l] = C0[n4[l]];
+			break;
+		case 3: //right rigid
+			if (C0[n1[l]] < C0[l])
+			C[l] = C0[n1[l]];
+			break;
+		case 4: //lower rigid
+			if (C0[n2[l]] < C0[l])
+			C[l] = C0[n2[l]];
+			break;
+		case 5: //left upper rigid corner
+			if (C0[n3[n4[l]]] < C0[l])
+			C[l] = C0[n3[n4[l]]];
+			break;
+		case 6: //right upper rigid corner
+			if (C0[n1[n4[l]]] < C0[l])
+			C[l] = C0[n1[n4[l]]];
+			break;
+		case 7: //right lower rigid corner
+			if (C0[n2[n1[l]]] < C0[l])
+			C[l] = C0[n2[n1[l]]];
+			break;
+		case 8: //left lower rigid corner
+			if (C0[n2[n3[l]]] < C0[l])
+			C[l] = C0[n2[n3[l]]];
 			break;
 		case 9: //inlet (from left)
 			C[l] = -0.5;
@@ -700,73 +881,6 @@ __global__ void concentration_no_wetting(double *C, double *C0, double *vx, doub
 
 
 }
-__global__ void concentration_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
-
-
-	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
-
-
-	if (l < n)
-	{
-
-		switch (t[l])
-		{
-		case 0: //inner
-			C[l] = C0[l]
-				+ tau * (
-					-vx[l] * dx1(l, C0)
-					- vy[l] * dy1(l, C0)
-					+ (dx2(l, mu) + dy2(l, mu)) / Pe
-					);
-			break;
-		case 1: //left rigid
-			if (C0[n3[l]] < C0[l])
-			C[l] = C0[n3[l]];
-			break;
-		case 2: //upper rigid
-			if (C0[n4[l]] < C0[l])
-			C[l] = C0[n4[l]];
-			break;
-		case 3: //right rigid
-			if (C0[n1[l]] < C0[l])
-			C[l] = C0[n1[l]];
-			break;
-		case 4: //lower rigid
-			if (C0[n2[l]] < C0[l])
-			C[l] = C0[n2[l]];
-			break;
-		case 5: //left upper rigid corner
-			if (C0[n3[n4[l]]] < C0[l])
-			C[l] = C0[n3[n4[l]]];
-			break;
-		case 6: //right upper rigid corner
-			if (C0[n1[n4[l]]] < C0[l])
-			C[l] = C0[n1[n4[l]]];
-			break;
-		case 7: //right lower rigid corner
-			if (C0[n2[n1[l]]] < C0[l])
-			C[l] = C0[n2[n1[l]]];
-			break;
-		case 8: //left lower rigid corner
-			if (C0[n2[n3[l]]] < C0[l])
-			C[l] = C0[n2[n3[l]]];
-			break;
-		case 9: //inlet (from left)
-			C[l] = -0.5;
-			break;
-		case 10://outlet (to right)
-			C[l] = dx1_eq_0_back(l, C0);
-			break;
-		default:
-			break;
-		}
-
-
-	}
-
-
-}
-
 
 __global__ void concentration_no_input_C(double *C, double *C0, double *vx, double *vy, double *mu) {
 
@@ -1070,6 +1184,233 @@ __global__ void reduction(double *data, unsigned int n, double* reduced) {
 
 
 }
+
+__global__ void quasi_velocity_upstream(double *ux, double *uy, double *vx, double *vy, double *C0, double *mu) {
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+				//ux_d
+			ux[l] = vx[l] //+ Gr*C0[l] * x_gamma(l)
+				+ tau  * (
+					-VgradF(l, vx, vx, vy)
+					//-vx[l] * dx1(l, vx) - vy[l] * dy1(l, vx)
+					+ (dx2(l, vx) + dy2(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			//uy_d
+			uy[l] = vy[l] //+ Gr*C0[l] * y_gamma(l)
+				+ tau  * (
+					-VgradF(l, vy, vx, vy)
+					//-vx[l] * dx1(l, vy) - vy[l] * dy1(l, vy)
+					+ (dx2(l, vy) + dy2(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 1: //left rigid
+			ux[l] = tau / Re * dx2_forward(l, vx);
+			break;
+		case 2: //upper rigid
+			uy[l] = tau / Re * dy2_down(l, vy);
+			break;
+		case 3: //right rigid
+			ux[l] = tau / Re * dx2_back(l, vx);
+			break;
+		case 4: //lower rigid
+			uy[l] = tau / Re * dy2_up(l, vy);
+			break;
+		case 5: //left upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 6: //right upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 7: //right lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 8: //left lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 9: //inlet (from left)
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_forward(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_forward(l, vx) + dy2(l, vx)) / Re
+				- C0[l] * dx1_forward(l, mu) / MM
+				);
+
+			uy[l] = tau * (
+				-vx[l] * dx1_forward(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_forward(l, vy) + dy2(l, vy)) / Re
+				- C0[l] * dy1(l, mu) / MM
+				);
+			break;
+		case 10: //outlet (to right)
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_back(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_back(l, vx) + dy2(l, vx)) / Re
+				- C0[l] * dx1_back(l, mu) / MM  //!
+				);
+			uy[l] = tau * (
+				-vx[l] * dx1_back(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_back(l, vy) + dy2(l, vy)) / Re
+				- C0[l] * dy1(l, mu) / MM //!
+				);
+			break;
+		default:
+			break;
+		}
+
+	}
+}
+__global__ void concentration_upstream(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-VgradF(l, C0, vx, vy)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			C[l] = dx1_eq_0_forward(l, C0);
+			break;
+		case 2: //upper rigid
+			C[l] = dy1_eq_0_down(l, C0);
+			break;
+		case 3: //right rigid
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		case 4: //lower rigid
+			C[l] = dy1_eq_0_up(l, C0);
+			break;
+		case 5: //left upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) + dy1_eq_0_down(l, C0));
+			break;
+		case 6: //right upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + dy1_eq_0_down(l, C0));
+			break;
+		case 7: //right lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + dy1_eq_0_up(l, C0));
+			break;
+		case 8: //left lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) + dy1_eq_0_up(l, C0));
+			break;
+		case 9: //inlet (from left)
+			C[l] = -0.5;
+			break;
+		case 10://outlet (to right)
+				//C[l] = dx1_eq_0_back(l, C0);
+			C[l] = extrapolate_forward(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+__global__ void chemical_potential_upstream(double *mu, double *C)
+{
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+		switch (t[l])
+		{
+		case 0: //inner
+			mu[l] = -Gr* r_gamma(l) //nu takoe
+				+ 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Ca*(dx2(l, C) + dy2(l, C));
+			break;
+		case 1: //left rigid
+			mu[l] = dx1_eq_0_forward(l, mu);
+			break;
+		case 2: //upper rigid
+			mu[l] = dy1_eq_0_down(l, mu);
+			break;
+		case 3: //right rigid
+			mu[l] = dx1_eq_0_back(l, mu);
+			break;
+		case 4: //lower rigid
+			mu[l] = dy1_eq_0_up(l, mu);
+			break;
+		case 5: //left upper rigid corner
+			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_down(l, mu));
+			break;
+		case 6: //right upper rigid corner
+			mu[l] = 0.5* (dx1_eq_0_back(l, mu) + dy1_eq_0_down(l, mu));
+			break;
+		case 7: //right lower rigid corner
+			mu[l] = 0.5* (dx1_eq_0_back(l, mu) + dy1_eq_0_up(l, mu));
+			break;
+		case 8: //left lower rigid corner
+			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_up(l, mu));
+			break;
+		case 9: //inlet (from left)
+			mu[l] = -Ca*dx2_forward(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_forward(l, mu);
+			break;
+		case 10://outlet (to right)
+			//mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
+			mu[l] - extrapolate_forward(l, mu);
+			break;
+		default:
+			break;
+		}
+
+	}
+}
+
 
 
 __global__ void swap_one(double* f_old, double* f_new) {
@@ -2017,13 +2358,13 @@ struct multi_cross {
 
 	}
 
-	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write, double timeq) {
+	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write, double timeq, double kk) {
 
 		ofstream to_file("recovery.dat");
 		ofstream to_file2("recovery2.dat");
 
-		to_file << i_time << " " << i_write << " " << timeq << endl;
-		to_file2 << i_time << " " << i_write << " " << timeq << endl;
+		to_file << i_time << " " << i_write << " " << timeq << " " << kk << endl;
+		to_file2 << i_time << " " << i_write << " " << timeq << " " << kk << endl;
 
 
 		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
@@ -2039,7 +2380,7 @@ struct multi_cross {
 
 	}
 
-	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write, double &timeq) {
+	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write, double &timeq, unsigned int &kk) {
 		ifstream from_file("recovery.dat");
 
 		string str;
@@ -2053,6 +2394,7 @@ struct multi_cross {
 		ss >> substr; i_time = atoi(substr.c_str());
 		ss >> substr; i_write = atoi(substr.c_str());
 		ss >> substr; timeq = atof(substr.c_str());
+		ss >> substr; kk = atoi(substr.c_str());
 
 		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			getline(from_file, str);
@@ -2350,14 +2692,12 @@ struct multi_cross {
 		double ten = 0;
 		//unsigned int lr, lu, lru;
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
-			if (t[l] == 2 || t[l] == 3 || t[l] == 10 || t[l] == 6 || t[l] == 7) continue;
-
-			//lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
-
-			ten += 0.25 / hx / hx*pow(C[n3[l]] - C[n1[l]], 2) + 0.25 / hy / hy*pow(C[n2[l]] - C[n4[l]], 2);
+			if (t[l] == 0) {
+				ten += 0.25 / hx / hx*pow(C[n3[l]] - C[n1[l]], 2) + 0.25 / hy / hy*pow(C[n2[l]] - C[n4[l]], 2);
+			}
 		}
 
-		return ten;
+		return ten*hx*hy;
 	}
 	void X_averaged_in_each_phase(double hx, double hy, double *C, double *X, double &X1av, double &X2av, double &Xav, double level = 0.0) {
 		Xav = 0; X1av = 0; /*plus*/ X2av = 0; /*minus*/
@@ -2417,7 +2757,15 @@ struct multi_cross {
 
 	}
 
-
+	unsigned int checkExit(double *C) {
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			if (t[l] == 10) {
+				if (C[l] < 0)
+					return 1;
+			}
+		}
+		return 0;
+	}
 
 };
 
@@ -3149,6 +3497,8 @@ __global__ void stupid_swap(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int
 	}
 }
 
+
+
 //this "stupid" step is designed to keep some objects in the global GPU scope
 //it is supposed to simplify some other parts of the code
 void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsigned int TS) {
@@ -3320,12 +3670,12 @@ int main(int argc, char **argv) {
 	double *psiav_array; 		 //  temporal variables //psiav0_h, eps_h *psiav_d, *psiav_array_h,   *psiav_h;
 	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, psiav, psiav0, eps, alpha_h, sinA_h, cosA_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h, dP_h; //parameters 
 	double Ek, Ek_old, Vmax, Q_in, Q_out, C_average, Cv;
-	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0,  offset_h, kk, k = 0, tt, write_i = 0, each = 1;					  //parameters
+	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0,  offset_h, kk, k = 0, tt, write_i = 0, each = 1, stop = 0;					  //parameters
 	double time_fields, time_recovery, time_display;
 	double timeq = 0.0, C_av, C_plus, C_minus;
 	double tecplot, limit_timeq;
 	bool copied = false;
-	unsigned int linear_pressure, fill_gradually, wetting, read_C;
+	unsigned int linear_pressure, fill_gradually, wetting, read_C, stop_at_exit;
 	unsigned int reset_timeq, invert_initial_C, reset_velocity, reset_pressure;
 	unsigned int PHASE_h, DIFFUSION_h;
 	string geometry;
@@ -3377,6 +3727,7 @@ int main(int argc, char **argv) {
 	File.reading<double>(heap_GB, "heap_GB", 1.0);
 	File.reading<int>(devID, "GPU_id", 0, 0, deviceCount - 1);
 	File.reading<unsigned int>(read_C, "read_concentration", 0, 0, 1);
+	File.reading<unsigned int>(stop_at_exit, "stop_at_exit", 0, 0, 1);
 	//File.reading<unsigned int>(clean_fields, "clean_fields", 1, 0, 1);
 
 
@@ -3411,7 +3762,8 @@ int main(int argc, char **argv) {
 	cosA_h = cos(alpha_h*pi / 180);
 	sinA_h = sin(alpha_h*pi / 180);
 	tau_p_h = 0.20*hx_h*hx_h;
-
+	Ek = 0; Ek_old = 0;
+	kk = 1000000; //Poisson iteration limit 
 
 	{
 		if (geometry == "matrix") {
@@ -3642,9 +3994,10 @@ int main(int argc, char **argv) {
 
 	//continue
 	if (read_switch == 1) {
-		Geom.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
+		Geom.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
 		if (reset_timeq == 0) {
 			integrals.open("integrals.dat", std::ofstream::app);
+			cout << "from time: " << timeq << " iter:" << iter << endl;
 		}
 		else if (reset_timeq == 1)
 		{
@@ -3733,10 +4086,6 @@ int main(int argc, char **argv) {
 	cudaDeviceSynchronize();
 
 
-	Ek = 0; Ek_old = 0; 
-	kk = 1000000; //Poisson iteration limit 
-
-
 
 
 
@@ -3817,13 +4166,14 @@ int main(int argc, char **argv) {
 			{
 				if (PHASE_h == 1) {
 					chemical_potential << <gridD, blockD >> > (mu, C);
-
+					//quasi_velocity_upstream << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 					quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 
 					switch (wetting)
 					{
 					case 0: //as it is
 						concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+						//concentration_upstream << < gridD, blockD >> > (C, C0, vx, vy, mu);
 						break;
 					case 1: //const initial concentration at walls, which is not washed out
 						concentration_no_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
@@ -3849,7 +4199,8 @@ int main(int argc, char **argv) {
 			//2nd step, Poisson equation for pressure 
 			{
 				eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
-				//while (eps > eps0*psiav0)
+				//while (eps > eps0*psiav0 || k < 10)
+				//while (eps > eps0*psiav0 )
 				while (eps > eps0*psiav0 && k < kk)
 				{
 
@@ -3900,9 +4251,9 @@ int main(int argc, char **argv) {
 			VFR(vx_h, Geom.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv); 
 			C_statistics(Geom.TOTAL_SIZE, hx_h, hy_h, Geom.t, C_h, C_av, C_plus, C_minus); 
 			len = Geom.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);  
-			ten = Ca_h / len * Geom.tension(hx_h, hy_h, C_h);
+			ten = Ca_h / len * Geom.tension(hx_h, hy_h, C_h);   if (!std::isfinite(ten)) ten = 0; //if (ten != ten) ten = 0;
 			vol = Geom.volume(hx_h, hy_h, C_h, 0.2);
-			width = vol / len;
+			width = vol / len;	if (!std::isfinite(width)) width = 0;  //if (abs(width) > 100000) width = 0;	
 			Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av, 0.05);
 			Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
 			
@@ -3938,11 +4289,17 @@ int main(int argc, char **argv) {
 				<< endl;
 
 			Ek_old = Ek;
+
+			if (stop_at_exit == 1) {
+				stop = Geom.checkExit(C_h);
+				if (stop == 1) 
+					cout << "stop command is applied" << endl;
+			}
 		}
 
 
 		//fields writing
-		if (iter % (int(time_fields * tt)) == 0 || iter == 1)
+		if (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1)
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3966,7 +4323,7 @@ int main(int argc, char **argv) {
 		}
 
 		//fields writting for stupid tecplot
-		if (tecplot!=0 && (iter % (int(time_fields * tt)) == 0 || iter == 1))
+		if (tecplot!=0 && (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1))
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3984,7 +4341,7 @@ int main(int argc, char **argv) {
 
 
 		//recovery fields writing
-		if (iter % (int)(tt*time_recovery) == 0 || timeq > limit_timeq)
+		if (iter % (int)(tt*time_recovery) == 0 || timeq > limit_timeq || stop == 1)
 		{
 			if (copied == false) {
 				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
@@ -3994,13 +4351,13 @@ int main(int argc, char **argv) {
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 				copied = true;
 			}
-			Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq);
+			Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
 		}
 		copied = false;
 		 // the end of 4th step
 
 
-		if (timeq > limit_timeq ) return 0;
+		if (timeq > limit_timeq || stop == 1) return 0;
 
 
 
