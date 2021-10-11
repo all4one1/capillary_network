@@ -111,7 +111,7 @@ void VFR(double *vx, int *t, unsigned int size, double hy, double &Q_in, double 
 	}
 	Q_in = Q_in*hy;
 	Q_out = Q_out*hy;
-	C_average = C_average*hy/(1.0-hy);
+	C_average = C_average*hy / (1.0 - hy);
 	Cv = Cv*hy;
 }
 
@@ -174,11 +174,11 @@ void reading_parameters(unsigned int &ny_h, unsigned int &nx_h, double &each_t, 
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; Gr_h = atof(substr.c_str());
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; Pe_h = atof(substr.c_str());
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; Re_h = atof(substr.c_str());
-	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; alpha_h = atof(substr.c_str()); 	
-	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; MM_h = atof(substr.c_str()); 
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; alpha_h = atof(substr.c_str());
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; MM_h = atof(substr.c_str());
 	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; tecplot = atof(substr.c_str());
-	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; PHASE_h = atoi(substr.c_str()); 
-	
+	ss.str(""); ss.clear(); getline(read, str); ss << str; ss >> substr; PHASE_h = atoi(substr.c_str());
+
 	read.close();
 
 }
@@ -205,7 +205,7 @@ public:
 	void open_file(string file_name) {
 		read.open(file_name.c_str());
 		if (read.good()) {
-			cout << endl  << "the parameter file \"" << file_name << "\" has been read " << endl << endl;
+			cout << endl << "the parameter file \"" << file_name << "\" has been read " << endl << endl;
 			oss << read.rdbuf();
 			buffer = oss.str();
 			iss.str(buffer);
@@ -252,8 +252,8 @@ public:
 		{
 			var = def_var;
 		}
-		
-		if (min != max && (min + max) != 0 ) {
+
+		if (min != max && (min + max) != 0) {
 			if (var > max || var < min)
 			{
 				cout << "Warning: \"" + parameter_name + "\" should not be within this range" << endl;
@@ -308,7 +308,7 @@ public:
 //__device__ multi_cross *Md;
 __constant__ double hx, hy, tau, Lx, Ly, tau_p;
 __constant__ double A, Ca, Gr, Pe, Re, MM, dP;
-__constant__ double sinA, cosA, alpha;
+__constant__ double alpha, sinA, cosA, theta, cosTh, sinTh;
 __constant__ unsigned int nx, ny, n, offset, border_type;
 __constant__ double eps0_d = 1e-5;
 __constant__ double pi = 3.1415926535897932384626433832795;
@@ -333,6 +333,7 @@ __global__ void hello() {
 	printf("Lx= %f Ly=%f \n", Lx, Ly);
 	printf("offset= %i  \n", offset);
 	printf("sinA= %f cosA=%f \n", sinA, cosA);
+	printf("sinTh= %f cosTh=%f \n", sinTh, cosTh);
 	printf("Total number of nodes = %i \n", TOTAL_SIZE);
 	printf("P inject factor = %f \n", dP);
 	if (PHASE == 1) printf("Phase field \n");
@@ -422,9 +423,9 @@ __device__ double VgradF(unsigned int l, double *f, double *vx, double *vy) {
 	else if (VL < 0) FL = f[l];
 
 	val += (VR*FR - VL*FL) / hx;
-	
 
-	
+
+
 	VU = (vy[n2[l]] + vy[l])*0.5;
 	VD = (vy[l] + vy[n4[l]])*0.5;
 
@@ -435,7 +436,7 @@ __device__ double VgradF(unsigned int l, double *f, double *vx, double *vy) {
 	else if (VD < 0) FD = f[l];
 
 	val += (VU*FU - VD*FD) / hy;
-	
+
 
 
 	return val;
@@ -671,9 +672,9 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 				- C0[l] * dx1_forward(l, mu) / MM
 				);
 
-			uy[l] =  tau * (
+			uy[l] = tau * (
 				-vx[l] * dx1_forward(l, vy) - vy[l] * dy1(l, vy)
-				+(dx2_forward(l, vy) + dy2(l, vy)) / Re  //  !быть может, !тут нужно дополнить
+				+ (dx2_forward(l, vy) + dy2(l, vy)) / Re  //  !быть может, !тут нужно дополнить
 				- C0[l] * dy1(l, mu) / MM
 				);
 			break;
@@ -683,7 +684,7 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 				+ (dx2_back(l, vx) + dy2(l, vx)) / Re
 				- C0[l] * dx1_back(l, mu) / MM  //!
 				);
-			uy[l] =  tau * (
+			uy[l] = tau * (
 				-vx[l] * dx1_back(l, vy) - vy[l] * dy1(l, vy)
 				+ (dx2_back(l, vy) + dy2(l, vy)) / Re
 				- C0[l] * dy1(l, mu) / MM //!
@@ -714,7 +715,7 @@ __global__ void concentration(double *C, double *C0, double *vx, double *vy, dou
 				+ tau * (
 					-vx[l] * dx1(l, C0)
 					- vy[l] * dy1(l, C0)
-					+ (dx2(l, mu) + dy2(l, mu)) / Pe 
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
 					);
 			break;
 		case 1: //left rigid
@@ -757,6 +758,131 @@ __global__ void concentration(double *C, double *C0, double *vx, double *vy, dou
 
 }
 
+
+__global__ void concentration_surface_energy_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	double Ca_test = sqrt(Ca) * 5;
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-vx[l] * dx1(l, C0)
+					- vy[l] * dy1(l, C0)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			C[l] = dx1_eq_0_forward(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test;
+			break;
+		case 2: //upper rigid
+			C[l] = dy1_eq_0_down(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test;
+			break;
+		case 3: //right rigid
+			C[l] = dx1_eq_0_back(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test;
+			break;
+		case 4: //lower rigid
+			C[l] = dy1_eq_0_up(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test;
+			break;
+		case 5: //left upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_down(l, C0) + 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 6: //right upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_down(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 7: //right lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_up(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 8: //left lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_up(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 9: //inlet (from left)
+			C[l] = -0.5;
+			break;
+		case 10://outlet (to right)
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+
+__global__ void concentration_geometrical_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
+
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+
+	double Ca_test = sqrt(Ca) * 5;
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			C[l] = C0[l]
+				+ tau * (
+					-vx[l] * dx1(l, C0)
+					- vy[l] * dy1(l, C0)
+					+ (dx2(l, mu) + dy2(l, mu)) / Pe
+					);
+			break;
+		case 1: //left rigid
+			C[l] = dx1_eq_0_forward(l, C0) - cosTh * 2.0 / 3.0*hx * sqrt(pow(dx1_forward(l, C0), 2) + pow(dy1(l, C0), 2));
+			break;
+		case 2: //upper rigid
+			C[l] = dy1_eq_0_down(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test;
+			break;
+		case 3: //right rigid
+			C[l] = dx1_eq_0_back(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test;
+			break;
+		case 4: //lower rigid
+			C[l] = dy1_eq_0_up(l, C0) - 0.75*cosTh*(1.0 - 4.0*C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test;
+			break;
+		case 5: //left upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_down(l, C0) + 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 6: //right upper rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_down(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 7: //right lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_back(l, C0) + 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_up(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 8: //left lower rigid corner
+			C[l] = 0.5* (dx1_eq_0_forward(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hx / Ca_test + dy1_eq_0_up(l, C0) - 0.75*cosTh*(1.0 - C0[l] * C0[l]) * 2.0 / 3.0*hy / Ca_test);
+			break;
+		case 9: //inlet (from left)
+			C[l] = -0.5;
+			break;
+		case 10://outlet (to right)
+			C[l] = dx1_eq_0_back(l, C0);
+			break;
+		default:
+			break;
+		}
+
+
+	}
+
+
+}
+
+
+
 __global__ void concentration_wetting(double *C, double *C0, double *vx, double *vy, double *mu) {
 
 
@@ -778,35 +904,35 @@ __global__ void concentration_wetting(double *C, double *C0, double *vx, double 
 			break;
 		case 1: //left rigid
 			if (C0[n3[l]] < C0[l])
-			C[l] = C0[n3[l]];
+				C[l] = C0[n3[l]];
 			break;
 		case 2: //upper rigid
 			if (C0[n4[l]] < C0[l])
-			C[l] = C0[n4[l]];
+				C[l] = C0[n4[l]];
 			break;
 		case 3: //right rigid
 			if (C0[n1[l]] < C0[l])
-			C[l] = C0[n1[l]];
+				C[l] = C0[n1[l]];
 			break;
 		case 4: //lower rigid
 			if (C0[n2[l]] < C0[l])
-			C[l] = C0[n2[l]];
+				C[l] = C0[n2[l]];
 			break;
 		case 5: //left upper rigid corner
 			if (C0[n3[n4[l]]] < C0[l])
-			C[l] = C0[n3[n4[l]]];
+				C[l] = C0[n3[n4[l]]];
 			break;
 		case 6: //right upper rigid corner
 			if (C0[n1[n4[l]]] < C0[l])
-			C[l] = C0[n1[n4[l]]];
+				C[l] = C0[n1[n4[l]]];
 			break;
 		case 7: //right lower rigid corner
 			if (C0[n2[n1[l]]] < C0[l])
-			C[l] = C0[n2[n1[l]]];
+				C[l] = C0[n2[n1[l]]];
 			break;
 		case 8: //left lower rigid corner
 			if (C0[n2[n3[l]]] < C0[l])
-			C[l] = C0[n2[n3[l]]];
+				C[l] = C0[n2[n3[l]]];
 			break;
 		case 9: //inlet (from left)
 			C[l] = -0.5;
@@ -980,10 +1106,24 @@ __global__ void velocity_correction(double *vx, double *vy, double *ux, double *
 		case 9: //inlet (from left)
 			vx[l] = ux[l] - tau * dx1_forward(l, p);
 			vy[l] = uy[l] - tau * dy1(l, p);
+
+			//double vx1 = ux[n3[l]] - tau * dx1(n3[l], p);
+			//double vx2 = ux[n3[n3[l]]] - tau * dx1(n3[n3[l]], p);
+
+			//double vy1 = uy[n3[l]] - tau * dy1(n3[l], p);
+			//double vy2 = uy[n3[n3[l]]] - tau * dy1(n3[n3[l]], p);
+
+			//vx[l] = 2.0*vx1 - vx2;
+			//vy[l] = 2.0*vy1 - vy2;
 			break;
 		case 10: //outlet (to right)
 			vx[l] = ux[l] - tau * dx1_back(l, p);
 			vy[l] = uy[l] - tau * dy1(l, p);
+
+			//vx[l] = ux[n1[l]] - tau * dx1(n1[l], p);
+			//vy[l] = uy[n1[l]] - tau * dy1(n1[l], p);
+
+
 			break;
 		default:
 			break;
@@ -1036,16 +1176,16 @@ __global__ void Poisson(double *p, double *p0, double *ux, double *uy, double *m
 		case 9: //inlet (from left)
 			p[l] = 8.0 / Re*Lx*dP
 				+ PHASE*(0.5*Ca*pow(dx1_forward(l, C), 2)
-				 -mu[l] * C[l]
-				+ A*pow(C[l], 2) + pow(C[l], 4)
-				- Gr*C[l] * r_gamma(l)) / MM;
+					- mu[l] * C[l]
+					+ A*pow(C[l], 2) + pow(C[l], 4)
+					- Gr*C[l] * r_gamma(l)) / MM;
 			break;
 		case 10://outlet (to right)
 			p[l] = 0
 				+ PHASE*(0.5*Ca*pow(dx1_back(l, C), 2)
-				 -mu[l] * C[l]
-				+ A*pow(C[l], 2) + pow(C[l], 4)
-				- Gr*C[l] * r_gamma(l)) / MM;
+					- mu[l] * C[l]
+					+ A*pow(C[l], 2) + pow(C[l], 4)
+					- Gr*C[l] * r_gamma(l)) / MM;
 			break;
 		default:
 			break;
@@ -1401,7 +1541,7 @@ __global__ void chemical_potential_upstream(double *mu, double *C)
 			mu[l] = -Ca*dx2_forward(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_forward(l, mu);
 			break;
 		case 10://outlet (to right)
-			//mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
+				//mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
 			mu[l] - extrapolate_forward(l, mu);
 			break;
 		default:
@@ -1637,7 +1777,8 @@ struct multi_cross {
 
 	}
 	void set_type_B() {
-		int l, L, l1, l2, l3, l4;
+		int l, L;
+		//int l1, l2, l3, l4;
 
 		//inner
 		for (unsigned int i = 0; i <= nxg; i++) {
@@ -1657,10 +1798,7 @@ struct multi_cross {
 		for (unsigned int i = 0; i <= nxg; i++) {
 			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
-				l1 = i - 1 + OFFSET*j;
-				l2 = i + OFFSET*j + OFFSET;
-				l3 = i + 1 + OFFSET*j;
-				l4 = i + OFFSET*j - OFFSET;
+				//l1 = i - 1 + OFFSET*j; 	l2 = i + OFFSET*j + OFFSET; l3 = i + 1 + OFFSET*j; 	l4 = i + OFFSET*j - OFFSET;
 				if (I[l] == 1) {
 					if (I[l] == 1) {
 						if (n1[L] == -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
@@ -1717,20 +1855,20 @@ struct multi_cross {
 		}
 
 		/*
-		//near border 
+		//near border
 		for (int i = 0; i <= nxg; i = i + nxg) {
-			for (int j = 0; j <= nyg; j++) {
-				l = i + OFFSET*j; L = J[l];
-				if (t[n1[L]] == 1) t[L] = 11;
-				if (t[n2[L]] == 2) t[L] = 12;
-				if (t[n3[L]] == 3) t[L] = 13;
-				if (t[n4[L]] == 4) t[L] = 14;
+		for (int j = 0; j <= nyg; j++) {
+		l = i + OFFSET*j; L = J[l];
+		if (t[n1[L]] == 1) t[L] = 11;
+		if (t[n2[L]] == 2) t[L] = 12;
+		if (t[n3[L]] == 3) t[L] = 13;
+		if (t[n4[L]] == 4) t[L] = 14;
 
-				if (t[n1[L]] == 1 && t[n2[L]] == 2) t[L] = 15;
-				if (t[n2[L]] == 2 && t[n3[L]] == 3) t[L] = 16;
-				if (t[n3[L]] == 3 && t[n4[L]] == 4) t[L] = 17;
-				if (t[n4[L]] == 4 && t[n1[L]] == 1) t[L] = 18;
-			}
+		if (t[n1[L]] == 1 && t[n2[L]] == 2) t[L] = 15;
+		if (t[n2[L]] == 2 && t[n3[L]] == 3) t[L] = 16;
+		if (t[n3[L]] == 3 && t[n4[L]] == 4) t[L] = 17;
+		if (t[n4[L]] == 4 && t[n1[L]] == 1) t[L] = 18;
+		}
 		}
 		*/
 
@@ -2076,7 +2214,7 @@ struct multi_cross {
 
 	}
 
-	
+
 
 	void set_global_size_box(int input_nx, int input_ny) {
 		nx = input_nx; nxg = nx;
@@ -2187,7 +2325,7 @@ struct multi_cross {
 				if (i == 0) {
 					n1[k] = -1;
 				}
-				
+
 				if (j == nyg) {
 					n2[k] = -1;
 				}
@@ -2209,7 +2347,7 @@ struct multi_cross {
 		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			l[i] = 0;
 			t[i] = 0;
-	}
+		}
 
 		unsigned int k;
 		for (unsigned int i = 0; i <= nx; i++) {
@@ -2259,17 +2397,60 @@ struct multi_cross {
 		to_file.close();
 
 	}
+
+	void write_linear_profile(string file_name, string head, double time, int step, double hx,
+		double *f1 = NULL, double *f2 = NULL, double *f3 = NULL, double *f4 = NULL, double *f5 = NULL, double *f6 = NULL) {
+#ifdef __linux__ 
+		ofstream to_file(("linear/" + file_name + ".dat").c_str());
+#endif
+#ifdef _WIN32
+		ofstream to_file(("linear\\" + file_name + ".dat").c_str());
+#endif
+
+		
+
+		int l, L;
+		to_file << head << " t=" << time << endl;
+		//for (unsigned int j = 0; j <= nyg; j = j + step) {
+		unsigned int j = nyg / 2;
+			for (unsigned int i = 0; i <= nxg; i = i + step) {
+				l = i + OFFSET*j; L = J[l];
+				//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
+				if (I[l] == 1) {
+					//to_file << i << " " << j << " " << f[L] << " " << t[L] << " " << L << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] 	<< endl;
+					to_file << i << " " << hx*i;
+					if (f1 != NULL) to_file << " " << f1[L];
+					if (f2 != NULL) to_file << " " << f2[L];
+					if (f3 != NULL) to_file << " " << f3[L];
+					if (f4 != NULL) to_file << " " << f4[L];
+					if (f5 != NULL) to_file << " " << f5[L];
+					if (f6 != NULL) to_file << " " << f6[L];
+					to_file << endl;
+				}
+				else
+				{
+					to_file << "skip" << endl;
+					//to_file << i << " " << j << " " << NAN << endl;
+					//to_file << i << " " << j << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 	<< endl;
+				}
+
+			}
+		//}
+		to_file.close();
+
+	}
+
 	void write_field_tecplot(double blank, double hx, double hy, double *vx, double *vy, double *p, double *C, double *mu, string file_name, double time, int step, int iter) {
 
 		ofstream to_file;
 		if (iter == 1)
 			to_file.open((file_name + ".dat").c_str());
-		else 
+		else
 			to_file.open((file_name + ".dat").c_str(), ofstream::app);
 
 		//make time to be string type
-		stringstream ss; 
-		ss << time; 
+		stringstream ss;
+		ss << time;
 		string str_time = ss.str();
 
 		//count the number of x and y elements
@@ -2280,7 +2461,7 @@ struct multi_cross {
 			II++;
 
 		to_file << "VARIABLES=\"x\",\"y\",\"C\",\"mu\",\"vx\",\"vy\",\"p\"" << endl;
-		to_file << "ZONE T=\""+str_time+"\", " << "I=" << II << ", J=" << JJ << endl;
+		to_file << "ZONE T=\"" + str_time + "\", " << "I=" << II << ", J=" << JJ << endl;
 
 		int l, L;
 		//to_file << time << endl;
@@ -2318,7 +2499,7 @@ struct multi_cross {
 							//if (Mcr[k].idx == 0 && Mcr[k].idy >= in_y)
 							if (Mcr[k].idx == 0 && (Mcr[k].idy < first || Mcr[k].idy > last))
 								if (t[it] == 9) t[it] = 1;
-		
+
 
 
 
@@ -2444,7 +2625,7 @@ struct multi_cross {
 
 	void linear_pressure(double *p, double hx, double hy, double cosA, double sinA, double Lx, double Ly, double coefficient = 1) {
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
-			p[l] = coefficient*( (Lx - hx*iG(l))*cosA -  (Ly - hy*jG(l))*sinA);
+			p[l] = coefficient*((Lx - hx*iG(l))*cosA - (Ly - hy*jG(l))*sinA);
 		}
 
 	}
@@ -2457,7 +2638,20 @@ struct multi_cross {
 			C[l] = 0.5*tanh((i*hx - shift) / delta);
 		}
 	}
-
+	void fill_with_sphere(double *C, double hx, double hy, double x0, double y0, double R0, double C_outer, double C_inner) {
+		unsigned int i, j;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			i = iG(l); 	j = jG(l);
+			double x = i*hx, y = j*hy;
+			
+			if (sqrt(pow(x - x0, 2) + pow(y - y0, 2)) < R0) {
+				C[l] = C_inner;
+			}
+			else {
+				C[l] = C_outer;
+			}
+		}
+	}
 	void fast_test_writing(double *f) {
 
 		ofstream to_file("test_field.dat");
@@ -2467,20 +2661,20 @@ struct multi_cross {
 
 		int l, L;
 
-	for (unsigned int j = 0; j <= nyg; j = j++) {
-		for (unsigned int i = 0; i <= nxg; i = i++) {
-		l = i + OFFSET*j; L = J[l];
+		for (unsigned int j = 0; j <= nyg; j = j++) {
+			for (unsigned int i = 0; i <= nxg; i = i++) {
+				l = i + OFFSET*j; L = J[l];
 
-		if (I[l] == 1) {
-			to_file << i << " " << j << " " << f[L] << endl;
-		}
-		else
-		{
-			to_file << "skip" << endl;
-		}
+				if (I[l] == 1) {
+					to_file << i << " " << j << " " << f[L] << endl;
+				}
+				else
+				{
+					to_file << "skip" << endl;
+				}
 
-	}
-}
+			}
+		}
 
 
 		to_file.close();
@@ -2501,20 +2695,20 @@ struct multi_cross {
 		unsigned int i, j, ii, jj;
 		unsigned int lr, lu, lru; //l right, up and right-up
 
-		for (unsigned int l = 0; l < TOTAL_SIZE; l++){
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			fx[l] = nan;
 			fy[l] = nan;
 		}
-//		int l = 0;
+		//		int l = 0;
 
 
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
-				if (C[l] < val)
-					mark[l] = -1;
-				else if (C[l] > val)
-					mark[l] = +1;
-				else
-					mark[l] = 0;
+			if (C[l] < val)
+				mark[l] = -1;
+			else if (C[l] > val)
+				mark[l] = +1;
+			else
+				mark[l] = 0;
 		}
 
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
@@ -2524,7 +2718,7 @@ struct multi_cross {
 			if (t[n2[l]] == 10 || t[n4[l]] == 10) continue;
 			if (n3[l] == -1 || n2[l] == -1) continue;
 			ii = iG(n3[l]); jj = jG(n2[l]);
-			
+
 			//if (ii > nxg || jj > nyg) continue;
 
 
@@ -2532,146 +2726,146 @@ struct multi_cross {
 
 			lr = n3[l]; lu = n2[l]; lru = n3[n2[l]];
 
-				if (abs(mark[l] + mark[lr] + mark[lu] + mark[lru]) == 4)
+			if (abs(mark[l] + mark[lr] + mark[lu] + mark[lru]) == 4)
+				continue;
+			else {
+				//case a
+
+				//************
+				//************
+				//************
+				//************
+				//−−−−−−−−−−−−
+
+				if (mark[l] == 0 && mark[lr] == 0) {
+					fy[l] = hy*j;
+					fy[lr] = hy*j;
+
+					len = len + hx;
 					continue;
-				else {
-					//case a
+				}
 
-					//************
-					//************
-					//************
-					//************
-					//−−−−−−−−−−−−
+				//case b
 
-					if (mark[l] == 0 && mark[lr] == 0) {
-						fy[l] = hy*j;
-						fy[lr] = hy*j;
+				//| ***********
+				//| ***********
+				//| ***********
+				//| ***********
+				//| ***********
 
-						len = len + hx;
-						continue;
-					}
+				if (mark[l] == 0 && mark[lu] == 0) {
+					fx[l] = hx*i;
+					fx[lu] = hx*i;
 
-					//case b
+					len = len + hy;
+					continue;
+				}
 
-					//| ***********
-					//| ***********
-					//| ***********
-					//| ***********
-					//| ***********
+				//case 1
 
-					if (mark[l] == 0 && mark[lu] == 0) {
-						fx[l] = hx*i;
-						fx[lu] = hx*i;
+				//************
+				//************
+				//−−−−−−−−−−−−
+				//************
+				//************
 
-						len = len + hy;
-						continue;
-					}
+				if (mark[l] * mark[lu] <= 0 && mark[lr] * mark[lru] <= 0 && mark[l] * mark[lu] + mark[lr] * mark[lru] != 0) {
 
-					//case 1
+					fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j;  //left
+					fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
 
-					//************
-					//************
-					//−−−−−−−−−−−−
-					//************
-					//************
+					len = len + sqrt(hx*hx + pow(fy[lr] - fy[l], 2));
+					continue;
+				}
 
-					if (mark[l]*mark[lu] <= 0 && mark[lr]*mark[lru] <= 0 && mark[l]*mark[lu] + mark[lr]*mark[lru] != 0) {
+				//case 2
 
-						fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j;  //left
-						fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
+				//***** | ******
+				//***** | ******
+				//***** | ******
+				//***** | ******
+				//***** | ******
 
-						len = len + sqrt(hx*hx + pow(fy[lr] - fy[l], 2));
-						continue;
-					}
+				if (mark[l] * mark[lr] <= 0 && mark[lu] * mark[lru] <= 0 && mark[l] * mark[lr] + mark[lu] * mark[lru] != 0) {
+					fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
+					fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
 
-					//case 2
+					len = len + sqrt(pow(fx[lu] - fx[l], 2) + hy*hy);
+					continue;
+				}
 
-					//***** | ******
-					//***** | ******
-					//***** | ******
-					//***** | ******
-					//***** | ******
+				//case 3
 
-					if (mark[l]*mark[lr] <= 0 && mark[lu]*mark[lru] <= 0 && mark[l]*mark[lr] + mark[lu]*mark[lru] != 0) {
-						fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
-						fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
+				//***** | ******
+				//***** | ******
+				//−−−−−−******
+				//************
+				//************
 
-						len = len + sqrt(pow(fx[lu] - fx[l], 2) + hy*hy);
-						continue;
-					}
+				if (mark[l] * mark[lu] <= 0 && mark[lu] * mark[lru] <= 0 && mark[l] * mark[lu] + mark[lu] * mark[lru] != 0) {
+					fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
+					fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j;  //left
 
-					//case 3
+					len = len + sqrt(pow(fx[lu] - hx*i, 2) + pow(fy[l] - hy*(jj), 2));
+					continue;
+				}
 
-					//***** | ******
-					//***** | ******
-					//−−−−−−******
-					//************
-					//************
+				//case 4
 
-					if (mark[l]*mark[lu] <= 0 && mark[lu]*mark[lru] <= 0 && mark[l]*mark[lu] + mark[lu]*mark[lru] != 0) {
-						fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
-						fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j;  //left
+				//***** | ******
+				//***** | ******
+				//*****−−−−−−−
+				//************
+				//************
 
-						len = len + sqrt(pow(fx[lu] - hx*i, 2) + pow(fy[l] - hy*(jj),2));
-						continue;
-					}
+				if (mark[lr] * mark[lru] <= 0 && mark[lu] * mark[lru] <= 0 && mark[lr] * mark[lru] + mark[lu] * mark[lru] != 0) {
+					fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
+					fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
 
-					//case 4
+					len = len + sqrt(pow(fx[lu] - hx*(ii), 2) + pow(fy[lr] - hy*(jj), 2));
+					continue;
+				}
 
-					//***** | ******
-					//***** | ******
-					//*****−−−−−−−
-					//************
-					//************
+				//case 5
 
-					if (mark[lr]*mark[lru] <= 0 && mark[lu]*mark[lru] <= 0 && mark[lr]*mark[lru] + mark[lu]*mark[lru] != 0) {
-						fx[lu] = (val - C[lu])*hx / (C[lru] - C[lu]) + hx*i; //up
-						fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
+				//************
+				//************
+				//******−−−−−−
+				//***** | ******
+				//***** | ******
 
-						len = len + sqrt(pow(fx[lu] - hx*(ii),2) + pow(fy[lr] - hy*(jj),2));
-						continue;
-					}
+				if (mark[l] * mark[lr] <= 0 && mark[lr] * mark[lru] <= 0 && mark[l] * mark[lr] + mark[lr] * mark[lru] != 0) {
+					fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
+					fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
 
-					//case 5
+					len = len + sqrt(pow(fx[l] - hx*(ii), 2) + pow(fy[lr] - hy*j, 2));
+					continue;
+				}
 
-					//************
-					//************
-					//******−−−−−−
-					//***** | ******
-					//***** | ******
+				//case 6
 
-					if (mark[l]*mark[lr] <= 0 && mark[lr]*mark[lru] <= 0 && mark[l]*mark[lr] + mark[lr]*mark[lru] != 0) {
-						fy[lr] = (val - C[lr])*hy / (C[lru] - C[lr]) + hy*j; //right
-						fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
+				//************
+				//************
+				//−−−−−−******
+				//***** | ******
+				//***** | ******
 
-						len = len + sqrt(pow(fx[l] - hx*(ii),2) + pow(fy[lr] - hy*j,2));
-						continue;
-					}
+				if (mark[l] * mark[lr] <= 0 && mark[l] * mark[lu] <= 0 && mark[l] * mark[lr] + mark[l] * mark[lu] != 0) {
+					fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j; //left
+					fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
 
-					//case 6
-
-					//************
-					//************
-					//−−−−−−******
-					//***** | ******
-					//***** | ******
-
-					if (mark[l]*mark[lr] <= 0 && mark[l]*mark[lu] <= 0 && mark[l]*mark[lr] + mark[l]*mark[lu] != 0) {
-						fy[l] = (val - C[l])*hy / (C[lu] - C[l]) + hy*j; //left
-						fx[l] = (val - C[l])*hx / (C[lr] - C[l]) + hx*i; //down
-
-						len = len + sqrt(pow(fx[l] - hx*i, 2) +  pow(fy[l] - hy*j, 2));
-						continue;
-					}
+					len = len + sqrt(pow(fx[l] - hx*i, 2) + pow(fy[l] - hy*j, 2));
+					continue;
+				}
 
 
 
 
-				}//end of main if
+			}//end of main if
 
 
-			}
-		
+		}
+
 		return len;
 
 	}
@@ -2735,6 +2929,82 @@ struct multi_cross {
 		if (n + n2 > 0) Xav /= (n + 0.5*n2);
 		if (n_plus + n2_plus > 0) X1av /= (n_plus + 0.5*n2_plus);
 		if (n_minus + n2_minus > 0) X2av /= (n_minus + 0.5*n2_minus);
+	}
+
+#define DX(F) 0.5 / hx * (F[n3[l]] - F[n1[l]])
+#define DY(F) 0.5 / hy * (F[n2[l]] - F[n4[l]])
+#define DX2(F) 1.0 / (hx * hx) * (F[n3[l]] + F[n1[l]] - 2.0 * F[l])
+#define DY2(F) 1.0 / (hy * hy) * (F[n2[l]] + F[n4[l]] - 2.0 * F[l])
+//#define DXY(F) (-F[l - 1 + OFFSET] + F[l + 1 + OFFSET] - F[l + 1 - OFFSET] + f[l - 1 - OFFSET]) / hx / hy / 4.0;
+#define DXY(F) (-F[n1[n2[l]]] + F[n3[n2[l]]] - F[n3[n4[l]]] + F[n1[n4[l]]]) / hx / hy / 4.0
+
+	void curvature_direct(double *C, double hx, double hy, double *curv) {
+		double dCx, dCy, abs_dC;
+		unsigned int i, j;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			i = iG(l); 	j = jG(l);
+
+			if (t[l] == 0) {
+				dCx = DX(C); dCy = DY(C);
+				abs_dC = sqrt(dCx*dCx + dCy*dCy);
+				double abs_dC3 = abs_dC*abs_dC*abs_dC + 0.001;
+
+				curv[l] = (dCx*dCx*DY2(C) + dCy*dCy*DX2(C) - 2.0*dCx*dCy*DXY(C))/ abs_dC3;
+				//if (abs_dC < 1e-6) curv[l] = 0;
+			}
+			else {
+				curv[l] = 0.0;
+			}
+		}
+	}
+
+	void curvature_direct2(double *C, double hx, double hy, double *curv) {
+		double dCx, dCy, abs_dC;
+		unsigned int i, j;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			i = iG(l); 	j = jG(l);
+
+			if (t[l] == 0) {
+				dCx = DX(C); dCy = DY(C);
+				abs_dC = sqrt(dCx*dCx + dCy*dCy);
+				double abs_dC3 = abs_dC*abs_dC*abs_dC;
+
+				curv[l] = (dCx*dCx*DY2(C) + dCy*dCy*DX2(C) - 2.0*dCx*dCy*DXY(C)) / abs_dC3;
+				if (abs_dC < 1e-6) curv[l] = 0;
+			}
+			else {
+				curv[l] = 0.0;
+			}
+		}
+	}
+
+
+
+	void curvature_2_steps(double *C, double *nx, double *ny, double hx, double hy, double *curv) {
+		//1
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			if (t[l] == 0) {
+				double dCx = DX(C);
+				double dCy = DY(C);
+				double abs_dC = sqrt(dCx*dCx + dCy*dCy) + 0.001;
+				nx[l] = dCx / abs_dC;
+				ny[l] = dCy / abs_dC;
+				
+			}
+			else {
+				nx[l] = 0.0;
+				ny[l] = 0.0;
+			}
+		}
+		//2
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			if (t[l] == 0) {
+				curv[l] = DX(nx) + DY(ny);
+			}
+			else {
+				curv[l] = 0.0;
+			}
+		}
 	}
 
 	void check() {
@@ -2950,7 +3220,8 @@ struct multi_line {
 
 
 	void set_type() {
-		int l, L, l1, l2, l3, l4;
+		int l, L;
+		//int l1, l2, l3, l4;
 
 		//inner
 		for (unsigned int i = 0; i <= nxg; i++) {
@@ -2970,10 +3241,7 @@ struct multi_line {
 		for (unsigned int i = 0; i <= nxg; i++) {
 			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
-				l1 = i - 1 + OFFSET*j;
-				l2 = i + OFFSET*j + OFFSET;
-				l3 = i + 1 + OFFSET*j;
-				l4 = i + OFFSET*j - OFFSET;
+			//	l1 = i - 1 + OFFSET*j; 				l2 = i + OFFSET*j + OFFSET; 				l3 = i + 1 + OFFSET*j;				l4 = i + OFFSET*j - OFFSET;
 				if (I[l] == 1) {
 					if (I[l] == 1) {
 						if (n1[L] == -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
@@ -3048,11 +3316,11 @@ struct multi_line {
 					write << i << " " << j << " " << 1 << " " << L << " " << t[L] << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] << endl;
 				else write << i << " " << j << " " << -1 << " " << -1 << " " << -1 << " " << -1 << " " << -1 << " " << -1 << " " << -1 << endl;
 			}
-			}
+		}
 		write.close();
 
 
-		}
+	}
 	void write_field(double *f, string file_name, double time, int step) {
 #ifdef __linux__ 
 		ofstream to_file(("fields/" + file_name + ".dat").c_str());
@@ -3138,226 +3406,226 @@ struct multi_line {
 
 
 
-	};
+};
 
 struct box {
 
-		cross *Mcr;
-		int *l, *t, *I, *J, *J_back;
-		int Mx, My, Msize, Moffset, OFFSET;
-		unsigned int iter = 0;
-		unsigned int TOTAL_SIZE = 0;
-		int *n1, *n2, *n3, *n4;
-		unsigned int nx, ny, offset;
-		unsigned int nxg, nyg;
-		double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;
-		double LX, LY;
+	cross *Mcr;
+	int *l, *t, *I, *J, *J_back;
+	int Mx, My, Msize, Moffset, OFFSET;
+	unsigned int iter = 0;
+	unsigned int TOTAL_SIZE = 0;
+	int *n1, *n2, *n3, *n4;
+	unsigned int nx, ny, offset;
+	unsigned int nxg, nyg;
+	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;
+	double LX, LY;
 
-		void set_global_size(int input_nx, int input_ny) {
-			nx = input_nx; nxg = nx;
-			ny = input_ny; nyg = ny;
-			offset = nx + 1;
-			OFFSET = offset;
-			TOTAL_SIZE = (input_nx + 1) * (input_ny + 1);
+	void set_global_size(int input_nx, int input_ny) {
+		nx = input_nx; nxg = nx;
+		ny = input_ny; nyg = ny;
+		offset = nx + 1;
+		OFFSET = offset;
+		TOTAL_SIZE = (input_nx + 1) * (input_ny + 1);
+	}
+
+
+	void set_type() {
+		l = new int[TOTAL_SIZE];
+		t = new int[TOTAL_SIZE];
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			l[i] = 0;
+			t[i] = 0;
 		}
 
+		unsigned int k;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (i == 0) t[k] = 9;
+				if (i == nx) t[k] = 10;
+				if (j == 0) t[k] = 4;
+				if (j == ny) t[k] = 2;
 
-		void set_type() {
-			l = new int[TOTAL_SIZE];
-			t = new int[TOTAL_SIZE];
-			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
-				l[i] = 0;
-				t[i] = 0;
+				iter++;
+
+
 			}
+		}
 
-			unsigned int k;
-			for (unsigned int i = 0; i <= nx; i++) {
-				for (unsigned int j = 0; j <= ny; j++) {
-					k = i + offset*j;
-					if (i == 0) t[k] = 9;
-					if (i == nx) t[k] = 10;
-					if (j == 0) t[k] = 4;
-					if (j == ny) t[k] = 2;
-					
-								iter++;
-				
+	}
 
+	void set_neighbor()
+	{
+
+
+		n1 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
+		}
+
+		unsigned int k, it = 0;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+				k = i + offset*j;
+				if (t[k] == 0) {
+					n1[k] = k - 1;
+					n2[k] = k + offset;
+					n3[k] = k + 1;
+					n4[k] = k - offset;
 				}
-			}
 
-		}
-
-		void set_neighbor()
-		{
-
-
-			n1 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-			n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-			n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-			n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
-			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
-				n1[i] = -1; n2[i] = -1; n3[i] = -1; n4[i] = -1;
-			}
-
-			unsigned int k, it = 0;
-			for (unsigned int i = 0; i <= nx; i++) {
-				for (unsigned int j = 0; j <= ny; j++) {
-					k = i + offset*j;
-					if (t[k] == 0) {
-						n1[k] = k - 1;
-						n2[k] = k + offset;
-						n3[k] = k + 1;
-						n4[k] = k - offset;
-					}
-						
-					if (t[k] == 2) 	n4[k] = k - offset;
-					if (t[k] == 4)  n2[k] = k + offset;
-					if (t[k] == 9) {
-						n3[k] = k + 1; 
-						n4[k] = k - offset;
-						n2[k] = k + offset;
-					}
-					if (t[k] == 10) {
-						n1[k] = k - 1;
-						n4[k] = k - offset;
-						n2[k] = k + offset;
-					}
-
-					it++;
+				if (t[k] == 2) 	n4[k] = k - offset;
+				if (t[k] == 4)  n2[k] = k + offset;
+				if (t[k] == 9) {
+					n3[k] = k + 1;
+					n4[k] = k - offset;
+					n2[k] = k + offset;
 				}
-			}
-
-
-
-		}
-
-		void set_global_id() {
-
-
-			I = new int[(nx + 1)*(ny + 1)];
-			J = new int[(nx + 1)*(ny + 1)];
-			J_back = new int[TOTAL_SIZE];
-
-			OFFSET = nx + 1;
-
-
-			for (unsigned int i = 0; i < (nx + 1)*(ny + 1); i++) {
-				I[i] = 0; J[i] = -1;
-			}
-			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
-				J_back[i] = -1;
-			}
-
-
-
-			unsigned int k, it = 0; // , in, ii, jj;
-			for (unsigned int i = 0; i <= nx; i++) {
-				for (unsigned int j = 0; j <= ny; j++) {
-
-					k = i + offset*j;
-					I[k] = 1;
-					J[k] = k;
-					J_back[k] = k;
-
-					it++;
-				
+				if (t[k] == 10) {
+					n1[k] = k - 1;
+					n4[k] = k - offset;
+					n2[k] = k + offset;
 				}
+
+				it++;
 			}
-
-
 		}
 
 
-		void write_field(double *f, string file_name, double time, int step) {
+
+	}
+
+	void set_global_id() {
+
+
+		I = new int[(nx + 1)*(ny + 1)];
+		J = new int[(nx + 1)*(ny + 1)];
+		J_back = new int[TOTAL_SIZE];
+
+		OFFSET = nx + 1;
+
+
+		for (unsigned int i = 0; i < (nx + 1)*(ny + 1); i++) {
+			I[i] = 0; J[i] = -1;
+		}
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			J_back[i] = -1;
+		}
+
+
+
+		unsigned int k, it = 0; // , in, ii, jj;
+		for (unsigned int i = 0; i <= nx; i++) {
+			for (unsigned int j = 0; j <= ny; j++) {
+
+				k = i + offset*j;
+				I[k] = 1;
+				J[k] = k;
+				J_back[k] = k;
+
+				it++;
+
+			}
+		}
+
+
+	}
+
+
+	void write_field(double *f, string file_name, double time, int step) {
 #ifdef __linux__ 
-			ofstream to_file(("fields/" + file_name + ".dat").c_str());
+		ofstream to_file(("fields/" + file_name + ".dat").c_str());
 #endif
 #ifdef _WIN32
-			ofstream to_file(("fields\\" + file_name + ".dat").c_str());
+		ofstream to_file(("fields\\" + file_name + ".dat").c_str());
 #endif
 
 
-			unsigned int l, L;
-			to_file << time << endl;
-			for (unsigned int j = 0; j <= nyg; j = j + step) {
-				for (unsigned int i = 0; i <= nxg; i = i + step) {
-					l = i + OFFSET*j; L = J[l];
-					//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
-					if (I[l] == 1) {
-						//to_file << i << " " << j << " " << f[L] << " " << t[L] << " " << L << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] << " " <<
-							//(J_back[L] - (J_back[L] / OFFSET)*OFFSET) << " " << (J_back[L] / OFFSET) << endl;
-						to_file << i << " " << j << " " << f[L] << endl;
-					}
-					else
-					{
-						to_file << "skip" << endl;
-						//to_file << i << " " << j << " " << NAN << endl;
-						//to_file << i << " " << j << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 	<< endl;
-					}
-
+		unsigned int l, L;
+		to_file << time << endl;
+		for (unsigned int j = 0; j <= nyg; j = j + step) {
+			for (unsigned int i = 0; i <= nxg; i = i + step) {
+				l = i + OFFSET*j; L = J[l];
+				//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
+				if (I[l] == 1) {
+					//to_file << i << " " << j << " " << f[L] << " " << t[L] << " " << L << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] << " " <<
+					//(J_back[L] - (J_back[L] / OFFSET)*OFFSET) << " " << (J_back[L] / OFFSET) << endl;
+					to_file << i << " " << j << " " << f[L] << endl;
 				}
+				else
+				{
+					to_file << "skip" << endl;
+					//to_file << i << " " << j << " " << NAN << endl;
+					//to_file << i << " " << j << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 	<< endl;
+				}
+
 			}
-			to_file.close();
-
 		}
+		to_file.close();
+
+	}
 
 
 
-		void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write) {
+	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write) {
 
-			ofstream to_file("recovery.dat");
-			ofstream to_file2("recovery2.dat");
+		ofstream to_file("recovery.dat");
+		ofstream to_file2("recovery2.dat");
 
-			to_file << i_time << " " << i_write << endl;
-			to_file2 << i_time << " " << i_write << endl;
-
-
-			for (unsigned int i = 0; i < TOTAL_SIZE; i++)
-				to_file << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
-			for (unsigned int i = 0; i < TOTAL_SIZE; i++)
-				to_file2 << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
+		to_file << i_time << " " << i_write << endl;
+		to_file2 << i_time << " " << i_write << endl;
 
 
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
+			to_file << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
+			to_file2 << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
 
 
-			to_file.close();
-			to_file2.close();
-
-		}
-
-		void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write) {
-			ifstream from_file("recovery.dat");
-
-			string str;
-			string substr;
-			stringstream ss;
 
 
+		to_file.close();
+		to_file2.close();
+
+	}
+
+	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write) {
+		ifstream from_file("recovery.dat");
+
+		string str;
+		string substr;
+		stringstream ss;
+
+
+		getline(from_file, str);
+
+		ss << str;
+		ss >> substr; i_time = atoi(substr.c_str());
+		ss >> substr; i_write = atoi(substr.c_str());
+
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
 			getline(from_file, str);
-
+			ss.str(""); ss.clear();
 			ss << str;
-			ss >> substr; i_time = atoi(substr.c_str());
-			ss >> substr; i_write = atoi(substr.c_str());
-
-			for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
-				getline(from_file, str);
-				ss.str(""); ss.clear();
-				ss << str;
-				ss >> substr; vx[i] = atof(substr.c_str());
-				ss >> substr; vy[i] = atof(substr.c_str());
-				ss >> substr; p[i] = atof(substr.c_str());
-				ss >> substr; C[i] = atof(substr.c_str());
-			}
-
-
-			from_file.close();
+			ss >> substr; vx[i] = atof(substr.c_str());
+			ss >> substr; vy[i] = atof(substr.c_str());
+			ss >> substr; p[i] = atof(substr.c_str());
+			ss >> substr; C[i] = atof(substr.c_str());
 		}
 
 
+		from_file.close();
+	}
 
-	};
 
-struct box_inherited:multi_cross
+
+};
+
+struct box_inherited :multi_cross
 {
 	unsigned int nx, ny, offset;
 
@@ -3531,7 +3799,7 @@ void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsig
 //pressure transformation to real pressure
 void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int *n1, int *n2, int *n3, int *n4, int *J_back,
 	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA, unsigned int PHASE) {
-	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись, 
+	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись,
 	осознание того, как надо было, пришло потом, когда переписывать заново стало долго*/
 
 	int left, right, up, down, left2, right2, up2, down2;
@@ -3542,8 +3810,8 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			continue;
 		}
 
-		left = n1[l]; right = n3[l]; up = n2[l]; down = n4[l]; 
-		if (left == -1) left = right; 
+		left = n1[l]; right = n3[l]; up = n2[l]; down = n4[l];
+		if (left == -1) left = right;
 		if (right == -1) right = left;
 		if (up == -1) up = down;
 		if (down == -1) down = up;
@@ -3551,20 +3819,20 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 
 		p_true[l] = p[l] +
 			(
-			+mu[l] * C[l]
-			- A*pow(C[l], 2) - pow(C[l], 4)
-			+ Gr*(
-				(J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA +    
-				(J_back[l] / OFFSET) * hy*sinA
-			  )					   
-			) / M;
+				+mu[l] * C[l]
+				- A*pow(C[l], 2) - pow(C[l], 4)
+				+ Gr*(
+				(J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA +
+					(J_back[l] / OFFSET) * hy*sinA
+					)
+				) / M;
 
 		switch (t[l])
 		{
 		case 0: //inner
-			p_true[l] += -0.5*Ca/M*(
-				pow((0.5*(C[right] - C[left]) / hx),2)  
-				+ pow((0.5*(C[up] - C[down]) / hy),2) );
+			p_true[l] += -0.5*Ca / M*(
+				pow((0.5*(C[right] - C[left]) / hx), 2)
+				+ pow((0.5*(C[up] - C[down]) / hy), 2));
 			break;
 		case 1: //left rigid
 			p_true[l] += -0.5*Ca / M*(
@@ -3619,7 +3887,7 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 		default:
 			break;
 		}
-		
+
 	}
 
 }
@@ -3650,10 +3918,12 @@ int main(int argc, char **argv) {
 
 #ifdef __linux__ 
 	system("mkdir -p fields/");
+	system("mkdir -p linear/");
 #endif
 
 #ifdef _WIN32
 	CreateDirectoryA("fields", NULL);
+	CreateDirectoryA("linear", NULL);
 #endif
 
 
@@ -3667,15 +3937,19 @@ int main(int argc, char **argv) {
 	double eps0 = 1e-5;
 	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu, *zero;  //_d - device (GPU) 
 	double *C_h, *p_h, *vx_h, *vy_h, *mu_h, *p_true_h, *zero_h;  //_h - host (CPU)
+	double *curv1, *curv2, *nx_dC, *ny_dC;
 	double *psiav_array; 		 //  temporal variables //psiav0_h, eps_h *psiav_d, *psiav_array_h,   *psiav_h;
-	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, psiav, psiav0, eps, alpha_h, sinA_h, cosA_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h, dP_h; //parameters 
+	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, psiav, psiav0, eps, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h, dP_h; //parameters 
+	double alpha_h, sinA_h, cosA_h, theta_h, sinTh_h, cosTh_h;
 	double Ek, Ek_old, Vmax, Q_in, Q_out, C_average, Cv;
-	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0,  offset_h, kk, k = 0, tt, write_i = 0, each = 1, stop = 0;					  //parameters
+	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, offset_h, kk, k = 0, tt, write_i = 0, each = 1, stop = 0;					  //parameters
 	double time_fields, time_recovery, time_display;
 	double timeq = 0.0, C_av, C_plus, C_minus;
 	double tecplot, limit_timeq;
 	bool copied = false;
 	unsigned int linear_pressure, fill_gradually, wetting, read_C, stop_at_exit;
+	unsigned int sphere_distribution, curv_calc, linear_profile;
+	double fill_gradually_x, sphere_x0, sphere_y0, sphere_R0;
 	unsigned int reset_timeq, invert_initial_C, reset_velocity, reset_pressure;
 	unsigned int PHASE_h, DIFFUSION_h;
 	string geometry;
@@ -3686,7 +3960,7 @@ int main(int argc, char **argv) {
 	unsigned int read_switch = 1; //read to continue or not? 
 
 
-	//reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
+								  //reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
 
 	string file_name = "inp.dat";
 	if (argc == 2) file_name = argv[1];
@@ -3708,6 +3982,7 @@ int main(int argc, char **argv) {
 	File.reading<double>(Pe_h, "Pe", 1e+4);
 	File.reading<double>(Re_h, "Re", 1.0);
 	File.reading<double>(alpha_h, "alpha", 0.0);
+	File.reading<double>(theta_h, "theta", 90.0);
 	File.reading<double>(MM_h, "MM", 1.0);
 	File.reading<double>(dP_h, "dP", 1.0);
 	File.reading<double>(tecplot, "tecplot", 10000);
@@ -3717,8 +3992,9 @@ int main(int argc, char **argv) {
 	File.reading<double>(limit_timeq, "time_limit", 5000.0);
 	File.reading<unsigned int>(linear_pressure, "linear_pressure", 0, 0, 1);
 	File.reading<unsigned int>(fill_gradually, "fill_gradually", 0, 0, 1);
+	File.reading<double>(fill_gradually_x, "fill_gradually_x", 0.5);
 	File.reading<unsigned int>(DIFFUSION_h, "pure_diffusion", 0, 0, 1);
-	File.reading<unsigned int>(wetting, "wetting", 0, 0, 2);
+	File.reading<unsigned int>(wetting, "wetting", 0, 0, 4);
 	File.reading_string(geometry, "geometry", "matrix");
 	File.reading<unsigned int>(reset_timeq, "reset_time", 0, 0, 1);
 	File.reading<unsigned int>(invert_initial_C, "invert_C", 0, 0, 1);
@@ -3728,11 +4004,20 @@ int main(int argc, char **argv) {
 	File.reading<int>(devID, "GPU_id", 0, 0, deviceCount - 1);
 	File.reading<unsigned int>(read_C, "read_concentration", 0, 0, 1);
 	File.reading<unsigned int>(stop_at_exit, "stop_at_exit", 0, 0, 1);
+	File.reading<unsigned int>(sphere_distribution, "sphere", 0, 0, 1);
+	File.reading<double>(sphere_x0, "sphere_x0", 0.1);
+	File.reading<double>(sphere_y0, "sphere_y0", 0.1);
+	File.reading<double>(sphere_R0, "sphere_R0", 0.1);
+	File.reading<unsigned int>(curv_calc, "curv_calc", 0, 0, 1);
+	File.reading<unsigned int>(linear_profile, "linear_profile", 0, 0, 1);
+	File.reading<double>(Lx_h, "Lx", 0.0);
+	File.reading<double>(Ly_h, "Ly", 0.0);
+
+
 	//File.reading<unsigned int>(clean_fields, "clean_fields", 1, 0, 1);
 
 
 
-	
 
 
 
@@ -3744,13 +4029,13 @@ int main(int argc, char **argv) {
 
 
 	//allocate heap size
-	size_t limit = (size_t)(1024 * 1024 * 1024* heap_GB);
+	size_t limit = (size_t)(1024 * 1024 * 1024 * heap_GB);
 	cudaDeviceSetLimit(cudaLimitMallocHeapSize, limit);
 	cudaDeviceGetLimit(&limit, cudaLimitMallocHeapSize);
 
 	//if (clean_fields == 1) {
-		//system("exec rm -r /fields/*");
-		//cout << "fields cleaned" << endl;
+	//system("exec rm -r /fields/*");
+	//cout << "fields cleaned" << endl;
 	//}
 
 
@@ -3788,13 +4073,18 @@ int main(int argc, char **argv) {
 		}
 
 		else if (geometry == "box") {
+			if (Ly_h != 0) hy_h = Ly_h / ny_h;
+			if (Lx_h != 0) hx_h = Lx_h / nx_h;
+
 			Geom.set_global_size_box(nx_h, ny_h);
 			Geom.set_type_box();
 			Geom.set_neighbor_box();
 			Geom.set_global_id_box();
 			Geom.check();
 		}
-
+		else if (geometry == "sphere_in_box") {
+			// ???
+		}
 		else if (geometry == "tube") {
 			Geom.set_global_size_box(nx_h, ny_h);
 			Geom.set_type_tube();
@@ -3802,12 +4092,13 @@ int main(int argc, char **argv) {
 			Geom.set_global_id_box();
 		}
 
+
 		else {
 			cout << "what are you trying to do?" << endl;
 			return 0;
 		}
 	}
-	
+
 
 
 
@@ -3815,14 +4106,14 @@ int main(int argc, char **argv) {
 
 
 	/*
-		box_inherited Geom;
-		Geom.set_global_size(nx_h, ny_h);
-		Geom.set_type();
-		Geom.set_neighbor();
-		Geom.set_global_id();
-		cout << "SIZE = " << " " << Geom.TOTAL_SIZE << endl;
+	box_inherited Geom;
+	Geom.set_global_size(nx_h, ny_h);
+	Geom.set_type();
+	Geom.set_neighbor();
+	Geom.set_global_id();
+	cout << "SIZE = " << " " << Geom.TOTAL_SIZE << endl;
 	*/
-	
+
 	//alternative geometry
 	/*
 	multi_line Geom;
@@ -3840,7 +4131,7 @@ int main(int argc, char **argv) {
 
 
 
-	
+
 	//here we copy the arrays responsible for the geometry to GPU
 	stupid_step(Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.t, Geom.J_back, Geom.TOTAL_SIZE);
 	cudaCheckError()
@@ -3856,7 +4147,7 @@ int main(int argc, char **argv) {
 	//you may just skip it, that is weird
 	offset_h = nx_h + 1;
 	unsigned int size_l = Geom.TOTAL_SIZE; //Number of all nodes/elements 
-	
+
 	if (size_l <= 1024 || size_l >= 1024 * 1024 * 1024) { cout << "data is too small or too large" << endl; return 0; }
 	std::cout << "size_l=" << size_l << endl;
 	size_t size_b /*size (in) bytes*/ = size_l * sizeof(double); //sizeof(double) = 8 bytes
@@ -3903,8 +4194,8 @@ int main(int argc, char **argv) {
 		if (DIFFUSION_h == 1) {
 			C_h = (double*)malloc(size_b); 		mu_h = (double*)malloc(size_b);
 			p_true_h = (double*)malloc(size_b); zero_h = (double*)malloc(size_b);
-			p_h = vx_h = vy_h = zero_h; 
-			for (unsigned int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_true_h[l] = 0.0; zero_h[l] = 0.0;}
+			p_h = vx_h = vy_h = zero_h;
+			for (unsigned int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_true_h[l] = 0.0; zero_h[l] = 0.0; }
 		}
 		else {
 			C_h = (double*)malloc(size_b); 		mu_h = (double*)malloc(size_b);
@@ -3913,6 +4204,18 @@ int main(int argc, char **argv) {
 			//  psiav_h = (double*)malloc(sizeof(double)); 
 			//	psiav_array_h = (double*)malloc(size_b / threads_per_block);
 			for (unsigned int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
+		}
+		if (curv_calc == 1) {
+			curv1 = (double*)malloc(size_b); 
+			curv2 = (double*)malloc(size_b);
+			nx_dC = (double*)malloc(size_b);
+			ny_dC = (double*)malloc(size_b);
+			for (unsigned int l = 0; l < size_l; l++) {
+				curv1[l] = 0.0;
+				curv2[l] = 0.0;
+				nx_dC[l] = 0.0;
+				ny_dC[l] = 0.0;
+			}
 		}
 	}
 
@@ -3924,11 +4227,19 @@ int main(int argc, char **argv) {
 		double delta = sqrt(Ca_h / 0.5);
 		Geom.fill_gradually(C_h, hx_h, hy_h, delta, 0.5);
 	}
+	if (sphere_distribution == 1) {
+		sphere_x0 = Lx_h * 0.5;
+		sphere_y0 = Ly_h * 0.5;
+		//sphere_R0 = 0.2;
+
+		double C_outer = +sqrt(-A_h / 2.0);
+		double C_inner = -sqrt(-A_h / 2.0);
+		Geom.fill_with_sphere(C_h, hx_h, hy_h, sphere_x0, sphere_y0, sphere_R0, C_outer, C_inner);
+	}
 
 
 
 
-	
 
 	//additional allocation on CPU for statistics if necessary // при какой еще необходимости!?
 	double *fx, *fy; signed char *mark;
@@ -3939,7 +4250,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	
+
 
 	//allocating memory for arrays on GPU
 	{
@@ -3978,13 +4289,13 @@ int main(int argc, char **argv) {
 	bool file_exists = read.good();
 	if (read_switch == 0) file_exists = false;
 
-	if (file_exists == true) { 
-		read_switch = 1; 	
+	if (file_exists == true) {
+		read_switch = 1;
 		std::cout << endl << "CONTINUE" << endl;
 	}
-	else { 
+	else {
 		read_switch = 0;
-		iter = 0; 
+		iter = 0;
 		std::cout << endl << "from the Start" << endl;
 		if (read_C == 1) {
 			std::cout << "initial concentration reading" << endl;
@@ -4018,15 +4329,15 @@ int main(int argc, char **argv) {
 				for (unsigned int l = 0; l < size_l; l++)
 					p_h[l] = 0.0;
 		}
-		
+
 	}
 
 	//from the start
-	if (read_switch == 0) 
+	if (read_switch == 0)
 		integrals.open("integrals.dat");
 
 
-	
+
 	//copying values from host variables to device ones
 	{
 		cudaMemcpy(C, C_h, size_b, cudaMemcpyHostToDevice); 	cudaMemcpy(C0, C_h, size_b, cudaMemcpyHostToDevice);
@@ -4052,18 +4363,21 @@ int main(int argc, char **argv) {
 		cudaMemcpyToSymbol(Gr, &Gr_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(Pe, &Pe_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(Re, &Re_h, sizeof(double), 0, cudaMemcpyHostToDevice);
-		cudaMemcpyToSymbol(alpha, &alpha_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(MM, &MM_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 
 		cudaMemcpyToSymbol(tau, &tau_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(tau_p, &tau_p_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(alpha, &alpha_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(sinA, &sinA_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(cosA, &cosA_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(theta, &theta_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(sinTh, &sinTh_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(cosTh, &cosTh_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(OFFSET, &Geom.OFFSET, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(Mx, &Geom.Mx, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(My, &Geom.My, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(Msize, &Geom.Msize, sizeof(int), 0, cudaMemcpyHostToDevice);
-//		cudaMemcpyToSymbol(Moffset, &Geom.Moffset, sizeof(int), 0, cudaMemcpyHostToDevice);
+		//		cudaMemcpyToSymbol(Mx, &Geom.Mx, sizeof(int), 0, cudaMemcpyHostToDevice);
+		//		cudaMemcpyToSymbol(My, &Geom.My, sizeof(int), 0, cudaMemcpyHostToDevice);
+		//		cudaMemcpyToSymbol(Msize, &Geom.Msize, sizeof(int), 0, cudaMemcpyHostToDevice);
+		//		cudaMemcpyToSymbol(Moffset, &Geom.Moffset, sizeof(int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(TOTAL_SIZE, &Geom.TOTAL_SIZE, sizeof(int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(PHASE, &PHASE_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(dP, &dP_h, sizeof(double), 0, cudaMemcpyHostToDevice);
@@ -4075,8 +4389,8 @@ int main(int argc, char **argv) {
 	{
 		cout << "approximate memory amount = " << 100 * Geom.TOTAL_SIZE / 1024 / 1024 << " MB" << endl;
 		PrintVar(wetting)
-		PrintVar(DIFFUSION_h)
-		PrintVar(geometry)
+			PrintVar(DIFFUSION_h)
+			PrintVar(geometry)
 	}
 
 
@@ -4100,7 +4414,7 @@ int main(int argc, char **argv) {
 	Geom.write_field(C_h, "0", timeq, each);
 
 
-	
+
 
 
 
@@ -4113,255 +4427,268 @@ int main(int argc, char **argv) {
 	//write the file with parameters
 	//this step was written for making movies
 	{
-	#ifdef __linux__ 
-			ofstream to_file("fields/param.dat");
-	#endif
-	#ifdef _WIN32
-			ofstream to_file("fields\\param.dat");
-	#endif
-	#define space << " " << 
-	to_file << Geom.nxg / each space Geom.nyg / each space hx_h*each space hy_h*each space Lx_h space Ly_h
-		space Gr_h space Ca_h space Pe_h space Re_h space A_h space MM_h space alpha_h
-		<< endl;
-	to_file.close();
+#ifdef __linux__ 
+		ofstream to_file("fields/param.dat");
+#endif
+#ifdef _WIN32
+		ofstream to_file("fields\\param.dat");
+#endif
+#define space << " " << 
+		to_file << Geom.nxg / each space Geom.nyg / each space hx_h*each space hy_h*each space Lx_h space Ly_h
+			space Gr_h space Ca_h space Pe_h space Re_h space A_h space MM_h space alpha_h
+			<< endl;
+		to_file.close();
 	}
 
 
 
-	
 
-	
 
-	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+
+
+	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back, tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
 
 
 
 	pause
-	// the main time loop of the whole calculation procedure
-	while (true) {
+		// the main time loop of the whole calculation procedure
+		while (true) {
 
-		
-		iter = iter + 1; 	timeq = timeq + tau_h;
+			iter = iter + 1; 	timeq = timeq + tau_h;
 
+			if (DIFFUSION_h == 1) { //only diffusion
 
-		if (DIFFUSION_h == 1) { //only diffusion
-			
 				if (PHASE_h == 1) {
 					chemical_potential << <gridD, blockD >> > (mu, C);
 					concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+					//concentration_surface_energy_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
 				}
 				else if (PHASE_h == 0) {
-					
+
 					concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
-					
-				}
-				
-			swap_one << <gridD, blockD >> > (C0, C);
-			
-		}
-		else { //flow
 
-
-			//1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
-			{
-				if (PHASE_h == 1) {
-					chemical_potential << <gridD, blockD >> > (mu, C);
-					//quasi_velocity_upstream << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-					quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-
-					switch (wetting)
-					{
-					case 0: //as it is
-						concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
-						//concentration_upstream << < gridD, blockD >> > (C, C0, vx, vy, mu);
-						break;
-					case 1: //const initial concentration at walls, which is not washed out
-						concentration_no_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
-						break;
-					case 2: //ongoing concentration devours initial one
-						concentration_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
-						break;
-					default:
-						break;
-					}
 				}
-				else if (PHASE_h == 0) {
-					chemical_potential_Gr << <gridD, blockD >> > (mu);
-					quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-					//if (timeq < 1)
-					concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
-					//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
-				}
+
+				swap_one << <gridD, blockD >> > (C0, C);
+
 			}
+			else { //flow
 
-			
-
-			//2nd step, Poisson equation for pressure 
-			{
-				eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
-				//while (eps > eps0*psiav0 || k < 10)
-				//while (eps > eps0*psiav0 )
-				while (eps > eps0*psiav0 && k < kk)
+				   //1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
 				{
+					if (PHASE_h == 1) {
+						chemical_potential << <gridD, blockD >> > (mu, C);
+						//quasi_velocity_upstream << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+						quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 
-					psiav = 0.0;  k++;
-					Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
-
-					for (unsigned int i = 0; i < s; i++)
-						reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
-					swap_one << <gridD, blockD >> > (p0, p);
-					cudaMemcpy(&psiav, psiav_array, sizeof(double), cudaMemcpyDeviceToHost);
-
-					eps = abs(psiav - psiav0); 	psiav0 = psiav;
-
-					if (k % 1000 == 0) {
-						cout << "p_iter=" << k << endl;
+						switch (wetting)
+						{
+						case 0: //as it is
+							concentration << < gridD, blockD >> > (C, C0, vx, vy, mu);
+							//concentration_upstream << < gridD, blockD >> > (C, C0, vx, vy, mu);
+							break;
+						case 1: //const initial concentration at walls, which is not washed out
+							concentration_no_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+							break;
+						case 2: //ongoing concentration devours initial one
+							concentration_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+							break;
+						case 3: //surface energy formulation by Jacqmin // not finished 
+							concentration_surface_energy_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+						default:
+							break;
+						}
+					}
+					else if (PHASE_h == 0) {
+						chemical_potential_Gr << <gridD, blockD >> > (mu);
+						quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+						//if (timeq < 1)
+						concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
+						//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
 					}
 				}
 
+				//2nd step, Poisson equation for pressure 
+				{
+					eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
+					//while (eps > eps0*psiav0 || k < 10)
+					//while (eps > eps0*psiav0 )
+					while (eps > eps0*psiav0 && k < kk)
+					{
+
+						psiav = 0.0;  k++;
+						Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
+
+						for (unsigned int i = 0; i < s; i++)
+							reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
+						swap_one << <gridD, blockD >> > (p0, p);
+						cudaMemcpy(&psiav, psiav_array, sizeof(double), cudaMemcpyDeviceToHost);
+
+						eps = abs(psiav - psiav0); 	psiav0 = psiav;
+
+						if (k % 1000 == 0) {
+							cout << "p_iter=" << k << endl;
+						}
+					}
+
+
+				}
+				kk = k;
+				//cout << "p_iter=" << k << endl;
+
+				//3rd step, velocity correction and swapping field values
+				velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
+
+				swap_3 << <gridD, blockD >> > (ux, vx, uy, vy, C0, C);
+
 
 			}
-			kk = k;
-			//cout << "p_iter=" << k << endl;
 
-			//3rd step, velocity correction and swapping field values
-			velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
+			//4th step, printing results, writing data and whatever you want
+			if (iter % (int)(tt *time_display) == 0 || iter == 1) {
+				cout << setprecision(15) << endl;
+				cout << fixed << endl;
+				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+				copied = true;
 
-			swap_3 << <gridD, blockD >> > (ux, vx, uy, vy, C0, C);
+				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
+					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+
+				double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av;
+				velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
+				VFR(vx_h, Geom.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv);
+				C_statistics(Geom.TOTAL_SIZE, hx_h, hy_h, Geom.t, C_h, C_av, C_plus, C_minus);
+				len = Geom.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);
+				ten = Ca_h / len / MM_h * Geom.tension(hx_h, hy_h, C_h);   if (!std::isfinite(ten)) ten = 0; //if (ten != ten) ten = 0;
+				vol = Geom.volume(hx_h, hy_h, C_h, 0.2);
+				width = vol / len;	if (!std::isfinite(width)) width = 0;  //if (abs(width) > 100000) width = 0;	
+				Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av, 0.05);
+				Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
 
 
-		}
-		
-		//4th step, printing results, writing data and whatever you want
-		if (iter % (int)(tt *time_display) == 0 || iter == 1) {
-			cout << setprecision(15) << endl;
-			cout << fixed << endl;
-			cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
-			cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
-			cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
-			cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
-			cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-			copied = true;
+				timer
+					cout << "t= " << tau_h*iter << endl;
+				cout << "Vmax= " << Vmax << endl;
+				cout << "Ek= " << Ek << endl;
+				cout << "dEk= " << abs(Ek - Ek_old) << endl;
+				cout << "p_iter=" << k << endl;
+				cout << "Q_in=" << Q_in << endl;
+				cout << "Q_out=" << Q_out << endl;
+				cout << "Vx_max=" << maxval(vx_h, size_l) << endl;
+				cout << "C_max=" << maxval(C_h, size_l) << endl;
+				cout << "p_max=" << maxval(p_h, size_l) << endl;
+				cout << "C_av=" << C_av << endl;
+				cout << "C_plus=" << C_plus << endl;
+				cout << "C_minus=" << C_minus << endl;
 
-			true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-				tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
-
-			double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av; 
-			velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax); 
-			VFR(vx_h, Geom.t, size_l, hy_h, Q_in, Q_out, C_h, C_average, Cv); 
-			C_statistics(Geom.TOTAL_SIZE, hx_h, hy_h, Geom.t, C_h, C_av, C_plus, C_minus); 
-			len = Geom.isoline(hx_h, hy_h, C_h, mark, fx, fy, 0.0);  
-			ten = Ca_h / len * Geom.tension(hx_h, hy_h, C_h);   if (!std::isfinite(ten)) ten = 0; //if (ten != ten) ten = 0;
-			vol = Geom.volume(hx_h, hy_h, C_h, 0.2);
-			width = vol / len;	if (!std::isfinite(width)) width = 0;  //if (abs(width) > 100000) width = 0;	
-			Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, p_true_h, p_plusAv, p_minusAv, p_Av, 0.05);
-			Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
-			
-
-			timer
-			cout << "t= " << tau_h*iter << endl;
-			cout << "Vmax= " << Vmax << endl;
-			cout << "Ek= " << Ek << endl;
-			cout << "dEk= " << abs(Ek - Ek_old) << endl;
-			cout << "p_iter=" << k << endl;
-			cout << "Q_in=" << Q_in << endl;
-			cout << "Q_out=" << Q_out << endl;
-			cout << "Vx_max=" << maxval(vx_h, size_l) << endl;
-			cout << "C_max=" << maxval(C_h, size_l) << endl;
-			cout << "p_max=" << maxval(p_h, size_l) << endl;
-			cout << "C_av=" << C_av << endl;
-			cout << "C_plus=" << C_plus << endl;
-			cout << "C_minus=" << C_minus << endl;
-
-			if (iter == 1)	{
-				integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width" 
-					<< ", Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width" 
-					<< ", p_plusAv, p_minusAv, vx_plusAv, vx_minusAv"
+				if (iter == 1) {
+					integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width"
+						<< ", Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width"
+						<< ", p_plusAv, p_minusAv, vx_plusAv, vx_minusAv"
+						<< endl;
+				}
+				integrals << setprecision(20) << fixed;
+				integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
+					<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
+					<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
+					<< " " << C_av << " " << C_plus << " " << C_minus
+					<< " " << len << " " << ten << " " << width
+					<< " " << p_plusAv << " " << p_minusAv << " " << vx_plusAv << " " << vx_minusAv
 					<< endl;
+
+				Ek_old = Ek;
+
+				if (stop_at_exit == 1) {
+					stop = Geom.checkExit(C_h);
+					if (stop == 1)
+						cout << "stop command is applied" << endl;
+				}
 			}
-			integrals << setprecision(20) << fixed;
-			integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
-				<< " " << abs(Ek - Ek_old) << " " << Q_in << " " << Q_out << " " << C_average / Matrix_Y << " " << Q_out / Matrix_Y << " " << Q_out / Ly_h
-				<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
-				<< " " << C_av << " " << C_plus << " " << C_minus
-				<< " " << len << " " << ten << " "  << width 
-				<< " " << p_plusAv << " " << p_minusAv << " " << vx_plusAv  << " " << vx_minusAv 
-				<< endl;
 
-			Ek_old = Ek;
 
-			if (stop_at_exit == 1) {
-				stop = Geom.checkExit(C_h);
-				if (stop == 1) 
-					cout << "stop command is applied" << endl;
+			//fields writing
+			if (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1)
+			{
+				if (copied == false) {
+					cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+					true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
+						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+					copied = true;
+				}
+				write_i++;
+				stringstream ss; string file_name;	ss.str(""); ss.clear();
+				ss << write_i;		file_name = ss.str();
+
+				Geom.write_field(C_h, file_name, timeq, each);
+				//Geom.write_field(vx_h, "vx" + file_name, timeq, each);
+				//Geom.write_field(vy_h, "vy" + file_name, timeq, each);
+				Geom.write_field(p_true_h, "true_p_" + file_name, timeq, each);
+				Geom.write_field(p_h, "p_" + file_name, timeq, each);
+
+				if (curv_calc) {
+					Geom.curvature_direct(C_h, hx_h, hy_h, curv1);
+					Geom.curvature_direct2(C_h, hx_h, hy_h, curv2);
+					//Geom.curvature_2_steps(C_h, nx_dC, ny_dC, hx_h, hy_h, curv2);
+					Geom.write_field(curv1, "curv_" + file_name, timeq, each);
+					Geom.write_field(curv2, "curv2_" + file_name, timeq, each);
+				}
+
+
+				if (linear_profile) {
+					string head = "i x C P_true P Mu curv curv2";
+					Geom.write_linear_profile(file_name, head, timeq, 1, hx_h, C_h, p_true_h, p_h, mu_h, curv1, curv2);
+				}
+				//Geom.write_field(mu_h, "mu" + file_name, timeq, each);
 			}
-		}
 
-
-		//fields writing
-		if (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1)
-		{
-			if (copied == false) {
-				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
-				copied = true;
+			//fields writting for stupid tecplot
+			if (tecplot != 0 && (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1))
+			{
+				if (copied == false) {
+					cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+					true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
+						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+					copied = true;
+				}
+				Geom.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
 			}
-			write_i++;
-			stringstream ss; string file_name;	ss.str(""); ss.clear();
-			ss << write_i;		file_name = ss.str();
 
-			Geom.write_field(C_h, file_name, timeq, each);
-			//Geom.write_field(vx_h, "vx" + file_name, timeq, each);
-			//Geom.write_field(vy_h, "vy" + file_name, timeq, each);
-			//Geom.write_field(p_h, "p" + file_name, timeq, each);
-			//Geom.write_field(mu_h, "mu" + file_name, timeq, each);
-		}
 
-		//fields writting for stupid tecplot
-		if (tecplot!=0 && (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1))
-		{
-			if (copied == false) {
-				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
-				copied = true;
+
+			//recovery fields writing
+			if (iter % (int)(tt*time_recovery) == 0 || timeq > limit_timeq || stop == 1)
+			{
+				if (copied == false) {
+					cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+					copied = true;
+				}
+				Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
 			}
-			Geom.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
-		}
+			copied = false;
+			// the end of 4th step
+
+
+			if (timeq > limit_timeq || stop == 1) return 0;
 
 
 
-		//recovery fields writing
-		if (iter % (int)(tt*time_recovery) == 0 || timeq > limit_timeq || stop == 1)
-		{
-			if (copied == false) {
-				cudaMemcpy(vx_h, vx, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(vy_h, vy, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
-				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-				copied = true;
-			}
-			Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
-		}
-		copied = false;
-		 // the end of 4th step
-
-
-		if (timeq > limit_timeq || stop == 1) return 0;
-
-
-
-	} //the end of the main time loop
+		} //the end of the main time loop
 
 
 
