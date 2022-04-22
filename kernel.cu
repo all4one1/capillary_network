@@ -1,4 +1,5 @@
-﻿
+﻿#define ThisSoftwareVersion "010222"
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>
@@ -15,7 +16,7 @@
 #include <cuda.h>
 #include <vector>
 #include <csignal>
-
+#include <time.h>
 #ifdef _WIN32
 #include "windows.h"
 #endif
@@ -23,6 +24,53 @@
 using namespace std;
 using std::cout;
 int state;
+
+
+//__device__ double *C, *C0, *ux, *uy, *vx, *vy, *p, *p0, *mu;
+//__device__ multi_cross *Md;
+__constant__ double hx, hy, tau, Lx, Ly, tau_p;
+__constant__ double A, Ca, Gr, Pe, Re, Gs, MM, dP;
+__constant__ double Amp, Omega, vibr_X, vibr_Y, VV;
+__constant__ double alpha, sinA, cosA, theta, cosTh, sinTh;
+__constant__ unsigned int nx, ny, n, offset, border_type;
+__constant__ double eps0_d = 1e-5;
+__constant__ double pi = 3.1415926535897932384626433832795;
+__constant__ int Mx, My, Msize, Moffset, OFFSET;
+__constant__ unsigned int iter;
+__constant__ unsigned int TOTAL_SIZE;
+__constant__ unsigned int nxg, nyg;
+__constant__ unsigned int PHASE;
+__constant__ unsigned int PHI_border_left, PHI_border_right, W_BORDER;
+__constant__ double PHI_value_left, PHI_value_right;
+__device__ int* n1, *n2, *n3, *n4, *t, *J_back;
+__device__ double Phi_reference = 0.0;
+
+__global__ void hello() {
+
+	printf("\n thread x:%i y:%i, information copied from device:\n", threadIdx.x, threadIdx.y);
+	printf("A= %f Ca=%f \n", A, Ca);
+	printf("Gr= %f Pe=%f \n", Gr, Pe);
+	printf("Re= %f M=%f \n", Re, MM);
+	printf("hx= %f hy=%f \n", hx, hy);
+	printf("tau= %20.16f  \n", tau);
+	printf("tau_p= %20.16f  \n", tau_p);
+	printf("nx= %i ny=%i  \n", nx, ny);
+	printf("Lx= %f Ly=%f \n", Lx, Ly);
+	printf("offset= %i  \n", offset);
+	printf("sinA= %f cosA=%f \n", sinA, cosA);
+	printf("sinTh= %f cosTh=%f \n", sinTh, cosTh);
+	printf("Total number of nodes = %i \n", TOTAL_SIZE);
+	printf("P inject factor = %f \n", dP);
+	printf("Amp= %f Omega=%f V=%f \n", Amp, Omega, VV);
+	printf("vibr_X= %f vibr_Y=%f \n", vibr_X, vibr_Y);
+	printf("Vibro border: W = %i, Phi_L = %i, Phi_R = %i, VALUE_L = %f, VALUE_R = %f \n",
+		W_BORDER, PHI_border_left, PHI_border_right, PHI_value_left, PHI_value_right);
+	if (PHASE == 1) printf("Phase field \n");
+	if (PHASE == 0) printf("Single phase flow \n");
+	printf("\n");
+}
+
+
 
 #define Pi 3.1415926535897932384626433832795
 #define pause system("pause");
@@ -51,6 +99,8 @@ if (e != cudaSuccess) {\
 
 #define VarName(Variable) (#Variable)
 #define PrintVar(Variable) cout << (#Variable) << " = " << Variable << endl; 
+#define defConst(F, type) type F##_h; File.reading<type>(F##_h, #F, 0.0); cudaMemcpyToSymbol(F, &F ## _h, sizeof(type), 0, cudaMemcpyHostToDevice);
+
 
 //getting Ek and Vmax
 void velocity(unsigned int N, double hx, double hy, double *vx, double *vy, double &Ek, double &Vmax) {
@@ -79,7 +129,30 @@ double maxval(double* f, unsigned int n)
 	}
 	return max;
 }
+double MINval(double* f, unsigned int n)
+{
+	double min = abs(f[0]);
 
+	for (unsigned int i = 0; i < n; i++) {
+		if (f[i]<min)
+		{
+			min = f[i];
+		}
+	}
+	return min;
+}
+double MAXval(double* f, unsigned int n)
+{
+	double max = (f[0]);
+
+	for (unsigned int i = 0; i < n; i++) {
+		if ((f[i])>max)
+		{
+			max = (f[i]);
+		}
+	}
+	return max;
+}
 double sum(double* f, unsigned int n)
 {
 	double sum = 0;
@@ -219,7 +292,8 @@ public:
 
 
 	template <typename T>
-	void reading(T &var, string parameter_name, T def_var, T min = 0, T max = 0) {
+	int reading(T &var, string parameter_name, T def_var, T min = 0, T max = 0) {
+		int ret = 0;
 		transform(parameter_name.begin(), parameter_name.end(), parameter_name.begin(), ::tolower);
 		iss.clear();
 		iss.seekg(0);
@@ -230,6 +304,7 @@ public:
 			ss.str("");	ss.clear();	ss << str;	ss >> substr;
 			transform(substr.begin(), substr.end(), substr.begin(), ::tolower);
 			if (substr == parameter_name) {
+				ret = 1;
 				pos = (int)ss.tellg();
 				while (ss >> substr) {
 					if (substr == "=")
@@ -260,6 +335,7 @@ public:
 				var = def_var;
 			}
 		}
+		return ret; //return 1 if read
 	}
 
 	void reading_string(string &var, string parameter_name, string def_var) {
@@ -302,44 +378,6 @@ public:
 };
 
 
-
-
-//__device__ double *C, *C0, *ux, *uy, *vx, *vy, *p, *p0, *mu;
-//__device__ multi_cross *Md;
-__constant__ double hx, hy, tau, Lx, Ly, tau_p;
-__constant__ double A, Ca, Gr, Pe, Re, MM, dP;
-__constant__ double alpha, sinA, cosA, theta, cosTh, sinTh;
-__constant__ unsigned int nx, ny, n, offset, border_type;
-__constant__ double eps0_d = 1e-5;
-__constant__ double pi = 3.1415926535897932384626433832795;
-__constant__ int Mx, My, Msize, Moffset, OFFSET;
-__constant__ unsigned int iter;
-__constant__ unsigned int TOTAL_SIZE;
-__constant__ unsigned int nxg, nyg;
-__constant__ unsigned int PHASE;
-__device__ int *n1, *n2, *n3, *n4, *t, *J_back;
-
-
-__global__ void hello() {
-
-	printf("\n thread x:%i y:%i, information copied from device:\n", threadIdx.x, threadIdx.y);
-	printf("A= %f Ca=%f \n", A, Ca);
-	printf("Gr= %f Pe=%f \n", Gr, Pe);
-	printf("Re= %f M=%f \n", Re, MM);
-	printf("hx= %f hy=%f \n", hx, hy);
-	printf("tau= %20.16f  \n", tau);
-	printf("tau_p= %20.16f  \n", tau_p);
-	printf("nx= %i ny=%i  \n", nx, ny);
-	printf("Lx= %f Ly=%f \n", Lx, Ly);
-	printf("offset= %i  \n", offset);
-	printf("sinA= %f cosA=%f \n", sinA, cosA);
-	printf("sinTh= %f cosTh=%f \n", sinTh, cosTh);
-	printf("Total number of nodes = %i \n", TOTAL_SIZE);
-	printf("P inject factor = %f \n", dP);
-	if (PHASE == 1) printf("Phase field \n");
-	if (PHASE == 0) printf("Single phase flow \n");
-	printf("\n");
-}
 
 __device__  double dx1(unsigned int l, double *f) {
 	return 0.5*(f[n3[l]] - f[n1[l]]) / hx;
@@ -391,6 +429,36 @@ __device__  double dy2_up(unsigned int l, double *f) {
 }
 __device__  double dy2_down(unsigned int l, double *f) {
 	return (2.0 * f[l] - 5.0 * f[n4[l]] + 4.0 * f[n4[n4[l]]] - f[n4[n4[n4[l]]]]) / hy / hy;
+}
+
+__device__ double dx2_eq_0_forward(unsigned int l, double* f) {
+	return (5.0 * f[n3[l]] - 4.0 * f[n3[n3[l]]] + f[n3[n3[n3[l]]]]) * 0.5;
+}
+__device__ double dx2_eq_0_back(unsigned int l, double* f) {
+	return (5.0 * f[n1[l]] - 4.0 * f[n1[n1[l]]] + f[n1[n1[n1[l]]]]) * 0.5;
+}
+__device__ double dy2_eq_0_up(unsigned int l, double* f) {
+	return (5.0 * f[n2[l]] - 4.0 * f[n2[n2[l]]] + f[n2[n2[n2[l]]]]) * 0.5;
+}
+__device__ double dy2_eq_0_down(unsigned int l, double* f) {
+	return (5.0 * f[n4[l]] - 4.0 * f[n4[n4[l]]] + f[n4[n4[n4[l]]]]) * 0.5;
+}
+
+
+
+__device__ double dxy1(double *f, int l, int i, int j) {
+	int ii = (J_back[l] - (J_back[l] / OFFSET)*OFFSET);
+	int jj = (J_back[l] / OFFSET);
+
+
+
+
+	if (i > 0 && i < nx  && j > 0 && j < ny) {
+		return (-f[l - 1 + offset] + f[l + 1 + offset] - f[l + 1 - offset] + f[l - 1 - offset]) / hx / hy / 4.0;
+	}
+	else {
+		return 0;
+	}
 }
 
 __device__ double extrapolate_back(unsigned int l, double *f) {
@@ -529,7 +597,7 @@ __global__ void chemical_potential(double *mu, double *C)
 		switch (t[l])
 		{
 		case 0: //inner
-			mu[l] = -Gr* r_gamma(l) //nu takoe
+			mu[l] = -MM*Gr* r_gamma(l) //nu takoe // da norm
 				+ 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Ca*(dx2(l, C) + dy2(l, C));
 			break;
 		case 1: //left rigid
@@ -557,10 +625,10 @@ __global__ void chemical_potential(double *mu, double *C)
 			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_up(l, mu));
 			break;
 		case 9: //inlet (from left)
-			mu[l] = -Ca*dx2_forward(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_forward(l, mu);
+			mu[l] = -Ca*dx2_forward(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - MM*Gr* r_gamma(l); //dx1_eq_0_forward(l, mu);
 			break;
 		case 10://outlet (to right)
-			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
+			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - MM*Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
 			break;
 		default:
 			break;
@@ -575,7 +643,7 @@ __global__ void chemical_potential_Gr(double *mu)
 
 	if (l < n)
 	{
-		mu[l] = -Gr* r_gamma(l);
+		mu[l] = -MM*Gr* r_gamma(l);
 	}
 }
 
@@ -697,6 +765,374 @@ __global__ void quasi_velocity(double *ux, double *uy, double *vx, double *vy, d
 	}
 }
 
+__global__ void quasi_velocity_pulsation(double *ux, double *uy, double *vx, double *vy, double *C0, double *mu, double time) {
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+				//ux_d
+
+			ux[l] = vx[l] //+ Gr*C0[l] * x_gamma(l)
+				+ tau  * (
+					-vx[l] * dx1(l, vx) - vy[l] * dy1(l, vx)
+					+ (dx2(l, vx) + dy2(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			//uy_d
+
+
+			uy[l] = vy[l] //+ Gr*C0[l] * y_gamma(l)
+				+ tau  * (
+					-vx[l] * dx1(l, vy) - vy[l] * dy1(l, vy)
+					+ (dx2(l, vy) + dy2(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 1: //left rigid
+			ux[l] = tau / Re * dx2_forward(l, vx);
+			break;
+		case 2: //upper rigid
+			uy[l] = tau / Re * dy2_down(l, vy);
+			break;
+		case 3: //right rigid
+			ux[l] = tau / Re * dx2_back(l, vx);
+			break;
+		case 4: //lower rigid
+			uy[l] = tau / Re * dy2_up(l, vy);
+			break;
+		case 5: //left upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 6: //right upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 7: //right lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 8: //left lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 9: //inlet (from left)
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_forward(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_forward(l, vx) + dy2(l, vx)) / Re
+				- C0[l] * dx1_forward(l, mu) / MM
+				);
+
+			uy[l] = tau * (
+				-vx[l] * dx1_forward(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_forward(l, vy) + dy2(l, vy)) / Re  //  !быть может, !тут нужно дополнить
+				- C0[l] * dy1(l, mu) / MM
+				);
+			break;
+		case 10: //outlet (to right)
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_back(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_back(l, vx) + dy2(l, vx)) / Re
+				- C0[l] * dx1_back(l, mu) / MM  //!
+				);
+			uy[l] = tau * (
+				-vx[l] * dx1_back(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_back(l, vy) + dy2(l, vy)) / Re
+				- C0[l] * dy1(l, mu) / MM //!
+				);
+			break;
+		default:
+			break;
+		}
+		ux[l] += tau*Amp*sin(Omega*time)*vibr_X;
+		uy[l] += tau*Amp*sin(Omega*time)*vibr_Y;
+
+	}
+}
+
+__global__ void quasi_velocity_pulsation_with_Phi(double *ux, double *uy, double *vx, double *vy, double *C0, double *mu, double time, double *Phi, double *WX, double *WY) {
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+		double W0_W = WX[l] * vibr_X + WY[l] * vibr_Y;
+
+		switch (t[l])
+		{
+		case 0: //inner
+				//ux_d
+
+			ux[l] = vx[l] //+ Gr*C0[l] * x_gamma(l)
+				+ tau  * (
+					-vx[l] * dx1(l, vx) - vy[l] * dy1(l, vx)
+					+ (dx2(l, vx) + dy2(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					- VV*(W0_W)*dx1(l, C0)
+					);
+			//uy_d
+
+
+			uy[l] = vy[l] //+ Gr*C0[l] * y_gamma(l)
+				+ tau  * (
+					-vx[l] * dx1(l, vy) - vy[l] * dy1(l, vy)
+					+ (dx2(l, vy) + dy2(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					- VV*(W0_W)*dy1(l, C0)
+					);
+			break;
+		case 1: //left rigid
+			ux[l] = tau / Re * dx2_forward(l, vx);
+			break;
+		case 2: //upper rigid
+			uy[l] = tau / Re * dy2_down(l, vy);
+			break;
+		case 3: //right rigid
+			ux[l] = tau / Re * dx2_back(l, vx);
+			break;
+		case 4: //lower rigid
+			uy[l] = tau / Re * dy2_up(l, vy);
+			break;
+		case 5: //left upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 6: //right upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 7: //right lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 8: //left lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 9: //inlet (from left)
+
+
+
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_forward(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_forward(l, vx) + dy2(l, vx)) / Re
+				- C0[l] * dx1_forward(l, mu) / MM
+				- VV*(W0_W)*dx1_forward(l, C0)
+				);
+
+			uy[l] = tau * (
+				-vx[l] * dx1_forward(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_forward(l, vy) + dy2(l, vy)) / Re  //  !быть может, !тут нужно дополнить
+				- C0[l] * dy1(l, mu) / MM
+				- VV*(W0_W)*dy1(l, C0)
+				);
+			break;
+		case 10: //outlet (to right)
+
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_back(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_back(l, vx) + dy2(l, vx)) / Re
+				- C0[l] * dx1_back(l, mu) / MM  //!
+				- VV*(W0_W)*dx1_back(l, C0)
+				);
+			uy[l] = tau * (
+				-vx[l] * dx1_back(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_back(l, vy) + dy2(l, vy)) / Re
+				- C0[l] * dy1(l, mu) / MM //!
+				- VV*(W0_W)*dy1(l, C0)
+				);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+__global__ void quasi_velocity_no_phase_field(double *ux, double *uy, double *vx, double *vy, double *C0, double *mu) {
+
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+				//ux_d
+			ux[l] = vx[l] //+ Gr*C0[l] * x_gamma(l)
+				+ tau  * (
+					-vx[l] * dx1(l, vx) - vy[l] * dy1(l, vx)
+					+ (dx2(l, vx) + dy2(l, vx)) / Re
+					+ Gr*C0[l] * cosA
+					);
+			//uy_d
+			uy[l] = vy[l] //+ Gr*C0[l] * y_gamma(l)
+				+ tau  * (
+					-vx[l] * dx1(l, vy) - vy[l] * dy1(l, vy)
+					+ (dx2(l, vy) + dy2(l, vy)) / Re
+					+ Gr*C0[l] * sinA
+					);
+			break;
+		case 1: //left rigid
+			ux[l] = tau / Re * dx2_forward(l, vx) + tau*Gr*C0[l] * cosA;
+			break;
+		case 2: //upper rigid
+			uy[l] = tau / Re * dy2_down(l, vy) + tau*Gr*C0[l] * sinA;
+			break;
+		case 3: //right rigid
+			ux[l] = tau / Re * dx2_back(l, vx) + tau*Gr*C0[l] * cosA;
+			break;
+		case 4: //lower rigid
+			uy[l] = tau / Re * dy2_up(l, vy) + tau*Gr*C0[l] * sinA;
+			break;
+		case 5: //left upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 6: //right upper rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_down(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_down(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 7: //right lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_back(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_back(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 8: //left lower rigid corner
+			ux[l] = vx[l]
+				+ tau  * (
+					+(dx2_forward(l, vx) + dy2_up(l, vx)) / Re
+					- C0[l] * dx1(l, mu) / MM
+					);
+			uy[l] = vy[l]
+				+ tau  * (
+					+(dx2_forward(l, vy) + dy2_up(l, vy)) / Re
+					- C0[l] * dy1(l, mu) / MM
+					);
+			break;
+		case 9: //inlet (from left)
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_forward(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_forward(l, vx) + dy2(l, vx)) / Re
+				+ Gr*C0[l] * cosA
+				);
+
+			uy[l] = tau * (
+				-vx[l] * dx1_forward(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_forward(l, vy) + dy2(l, vy)) / Re  //  !быть может, !тут нужно дополнить
+				+ Gr*C0[l] * sinA
+				);
+			break;
+		case 10: //outlet (to right)
+			ux[l] = vx[l] + tau*(
+				-vx[l] * dx1_back(l, vx) - vy[l] * dy1(l, vx)
+				+ (dx2_back(l, vx) + dy2(l, vx)) / Re
+				+ Gr*C0[l] * cosA
+				);
+			uy[l] = tau * (
+				-vx[l] * dx1_back(l, vy) - vy[l] * dy1(l, vy)
+				+ (dx2_back(l, vy) + dy2(l, vy)) / Re
+				+ Gr*C0[l] * sinA
+				);
+			break;
+		default:
+			break;
+		}
+
+	}
+}
 
 
 __global__ void concentration(double *C, double *C0, double *vx, double *vy, double *mu) {
@@ -1131,6 +1567,7 @@ __global__ void velocity_correction(double *vx, double *vy, double *ux, double *
 	}
 }
 
+//for solely pressure
 __global__ void Poisson(double *p, double *p0, double *ux, double *uy, double *mu, double *C)
 {
 
@@ -1146,52 +1583,363 @@ __global__ void Poisson(double *p, double *p0, double *ux, double *uy, double *m
 				);
 			break;
 		case 1: //left rigid
-			p[l] = dx1_eq_0_forward(l, p0) + ux[l] * 2.0 * hx / tau / 3.0;
+			p[l] = dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0;
 			break;
 		case 2: //upper rigid
-			p[l] = dy1_eq_0_down(l, p0) - uy[l] * 2.0 * hy / tau / 3.0;
+			p[l] = dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0;
 			break;
 		case 3: //right rigid
-			p[l] = dx1_eq_0_back(l, p0) - ux[l] * 2.0 * hx / tau / 3.0;
+			p[l] = dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0;
 			break;
 		case 4: //lower rigid
-			p[l] = dy1_eq_0_up(l, p0) + uy[l] * 2.0 * hy / tau / 3.0;
+			p[l] = dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0;
 			break;
 		case 5: //left upper rigid corner
-			p[l] = 0.5* (dx1_eq_0_forward(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
-				+ dy1_eq_0_down(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
+			p[l] = 0.5* (dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 6: //right upper rigid corner
-			p[l] = 0.5* (dx1_eq_0_back(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
-				+ dy1_eq_0_down(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
+			p[l] = 0.5* (dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 7: //right lower rigid corner
-			p[l] = 0.5* (dx1_eq_0_back(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
-				+ dy1_eq_0_up(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
+			p[l] = 0.5* (dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 8: //left lower rigid corner
-			p[l] = 0.5* (dx1_eq_0_forward(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
-				+ dy1_eq_0_up(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
+			p[l] = 0.5* (dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 9: //inlet (from left)
 			p[l] = 8.0 / Re*Lx*dP
-				+ PHASE*(0.5*Ca*pow(dx1_forward(l, C), 2)
+				+ PHASE*((0.5*Ca*pow(dx1_forward(l, C), 2)
 					- mu[l] * C[l]
-					+ A*pow(C[l], 2) + pow(C[l], 4)
-					- Gr*C[l] * r_gamma(l)) / MM;
+					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
+					- Gr*C[l] * r_gamma(l));
 			break;
 		case 10://outlet (to right)
 			p[l] = 0
-				+ PHASE*(0.5*Ca*pow(dx1_back(l, C), 2)
+				+ PHASE*((0.5*Ca*pow(dx1_back(l, C), 2)
 					- mu[l] * C[l]
-					+ A*pow(C[l], 2) + pow(C[l], 4)
-					- Gr*C[l] * r_gamma(l)) / MM;
+					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
+					- Gr*C[l] * r_gamma(l));
 			break;
 		default:
 			break;
 		}
 	}
 }
+
+//for pressure with Phi
+__global__ void Poisson_pulsation_Phi(double *p, double *p0, double *ux, double *uy, double *mu, double *C, double *Phi, double *WX, double *WY)
+{
+	//vibration = 1
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+	if (l < n)
+	{
+
+		switch (t[l])
+		{
+		case 0: //inner
+			p[l] = p0[l] + tau_p*(
+				-(dx1(l, ux) + dy1(l, uy)) / tau
+				+ dx2(l, p0) + dy2(l, p0)
+				);
+			break;
+		case 1: //left rigid
+			p[l] = dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0;
+			break;
+		case 2: //upper rigid
+			p[l] = dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0;
+			break;
+		case 3: //right rigid
+			p[l] = dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0;
+			break;
+		case 4: //lower rigid
+			p[l] = dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0;
+			break;
+		case 5: //left upper rigid corner
+			p[l] = 0.5* (dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 6: //right upper rigid corner
+			p[l] = 0.5* (dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 7: //right lower rigid corner
+			p[l] = 0.5* (dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 8: //left lower rigid corner
+			p[l] = 0.5* (dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 9: //inlet (from left)
+			p[l] = 8.0 / Re*Lx*dP
+				+ PHASE*((0.5*Ca*pow(dx1_forward(l, C), 2)
+					- mu[l] * C[l]
+					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
+					- Gr*C[l] * r_gamma(l));
+			p[l] += (WX[l] * WX[l] + WY[l] * WY[l])*0.5*VV;
+
+			break;
+		case 10://outlet (to right)
+			p[l] = 0
+				+ PHASE*((0.5*Ca*pow(dx1_back(l, C), 2)
+					- mu[l] * C[l]
+					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
+					- Gr*C[l] * r_gamma(l));
+			p[l] += (WX[l] * WX[l] + WY[l] * WY[l])*0.5*VV;
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+
+__global__ void Poisson_pulsation(double *p, double *p0, double *ux, double *uy, double *mu, double *C, double time)
+{
+	//vibration = 3
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+	if (l < n)
+	{
+		switch (t[l])
+		{
+		case 0: //inner
+			p[l] = p0[l] + tau_p*(
+				-(dx1(l, ux) + dy1(l, uy)) / tau
+				+ dx2(l, p0) + dy2(l, p0)
+				);
+			break;
+		case 1: //left rigid
+			p[l] = dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0;
+			break;
+		case 2: //upper rigid
+			p[l] = dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0;
+			break;
+		case 3: //right rigid
+			p[l] = dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0;
+			break;
+		case 4: //lower rigid
+			p[l] = dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0;
+			break;
+		case 5: //left upper rigid corner
+			p[l] = 0.5* (dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 6: //right upper rigid corner
+			p[l] = 0.5* (dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_down(l, p0) + uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 7: //right lower rigid corner
+			p[l] = 0.5* (dx1_eq_0_back(l, p0) + ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 8: //left lower rigid corner
+			p[l] = 0.5* (dx1_eq_0_forward(l, p0) - ux[l] * 2.0 * hx / tau / 3.0
+				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
+			break;
+		case 9: //inlet (from left)
+			p[l] = 8.0 / Re*Lx*dP*(1.0 + Amp*sin(Omega*time))
+				+ PHASE*((0.5*Ca*pow(dx1_forward(l, C), 2)
+					- mu[l] * C[l]
+					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
+					- Gr*C[l] * r_gamma(l));
+			break;
+		case 10://outlet (to right)
+			p[l] = 0
+				+ PHASE*((0.5*Ca*pow(dx1_back(l, C), 2)
+					- mu[l] * C[l]
+					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
+					- Gr*C[l] * r_gamma(l));
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+__global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, double *WY)
+{
+	//vibration = 1
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+	if (l < n)
+	{
+		//if (l == 1) Phi0[l] = 0;
+		switch (t[l])
+		{
+		case 0: //inner
+			Phi[l] = Phi0[l] + tau_p*(
+				-(dx1(l, C)*vibr_X + dy1(l, C)*vibr_Y)
+				+ dx2(l, Phi0) + dy2(l, Phi0)
+				);
+			break;
+		case 1: //left rigid
+			Phi[l] = dx1_eq_0_forward(l, Phi0) - C[l] * vibr_X * 2.0 * hx / 3.0;
+			break;
+		case 2: //upper rigid
+			Phi[l] = dy1_eq_0_down(l, Phi0) + C[l] * vibr_Y * 2.0 * hy / 3.0;
+			break;
+		case 3: //right rigid
+			Phi[l] = dx1_eq_0_back(l, Phi0) + C[l] * vibr_X * 2.0 * hx / 3.0;
+			break;
+		case 4: //lower rigid
+			Phi[l] = dy1_eq_0_up(l, Phi0) - C[l] * vibr_Y * 2.0 * hy / 3.0;
+			break;
+		case 5: //left upper rigid corner
+			Phi[l] = 0.5* (dx1_eq_0_forward(l, Phi0) - C[l] * vibr_X * 2.0 * hx / 3.0
+				+ dy1_eq_0_down(l, Phi0) + C[l] * vibr_Y * 2.0 * hy / 3.0);
+			break;
+		case 6: //right upper rigid corner
+			Phi[l] = 0.5* (dx1_eq_0_back(l, Phi0) + C[l] * vibr_X * 2.0 * hx / 3.0
+				+ dy1_eq_0_down(l, Phi0) + C[l] * vibr_Y * 2.0 * hy / 3.0);
+			break;
+		case 7: //right lower rigid corner
+			Phi[l] = 0.5* (dx1_eq_0_back(l, Phi0) + C[l] * vibr_X * 2.0 * hx / 3.0
+				+ dy1_eq_0_up(l, Phi0) - C[l] * vibr_Y * 2.0 * hy / 3.0);
+			break;
+		case 8: //left lower rigid corner
+			Phi[l] = 0.5* (dx1_eq_0_forward(l, Phi0) - C[l] * vibr_X * 2.0 * hx / 3.0
+				+ dy1_eq_0_up(l, Phi0) - C[l] * vibr_Y * 2.0 * hy / 3.0);
+			break;
+		case 9: //inlet (from left)
+			if (PHI_border_left == 0) {
+				Phi[l] = PHI_value_left;
+			}
+			else if (PHI_border_left == 1) {
+				Phi[l] = dx1_eq_0_forward(l, Phi0) - (PHI_value_left) * 2.0 * hx / 3.0;
+			}
+			else if (PHI_border_left == 2) {
+				Phi[l] = dx2_eq_0_forward(l, Phi0) - (PHI_value_left)* hx * hx / 2.0;
+			}
+			else if (PHI_border_left == 3) {
+				Phi[l] = dx1_eq_0_forward(l, Phi0) - (C[l] * vibr_X) * 2.0 * hx / 3.0;
+			}
+			break;
+		case 10://outlet (to right)
+			if (PHI_border_right == 0) {
+				Phi[l] = PHI_value_right;
+			}
+			else if (PHI_border_right == 1) {
+				Phi[l] = dx1_eq_0_back(l, Phi0) + (PHI_value_right) * 2.0 * hx / 3.0;
+			}
+			else if (PHI_border_right == 2) {
+				Phi[l] = dx2_eq_0_back(l, Phi0) - (PHI_value_right)* hx * hx / 2.0;
+			}
+			else if (PHI_border_right == 3) {
+				Phi[l] = dx1_eq_0_back(l, Phi0) + (C[l] * vibr_X) * 2.0 * hx / 3.0;
+			}
+			break;
+		default:
+			break;
+		}
+		if (l == 1) Phi_reference = Phi[l];
+	}
+}
+
+__global__ void Phi_normalization(double *Phi) {
+	//vibration = 1
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+	if (l < n)
+	{
+		Phi[l] = Phi[l] - Phi_reference;
+	}
+}
+
+__global__ void WW_from_Phi(double *WX, double *WY, double *Phi, double *C) {
+	{
+		//vibration = 1
+		unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+		if (l < n)
+		{
+			switch (t[l])
+			{
+			case 0: //inner
+				WX[l] = -vibr_X*C[l] + dx1(l, Phi);
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				break;
+			case 1: //left rigid
+				WX[l] = 0;
+				WY[l] = 0; // -vibr_Y*C[n3[l]] + dy1(n3[l], Phi);;  //well, think of it if dC/dn != 0
+				break;
+			case 2: //upper rigid
+				WX[l] = 0; // -vibr_X*C[n4[l]] + dx1(n4[l], Phi);;
+				WY[l] = 0;
+				break;
+			case 3: //right rigid
+				WX[l] = 0;
+				WY[l] = 0; // -vibr_Y*C[n1[l]] + dy1(n1[l], Phi);
+				break;
+			case 4: //lower rigid
+				WX[l] = 0; // -vibr_X*C[n2[l]] + dx1(n2[l], Phi);
+				WY[l] = 0;
+				break;
+			case 5: //left upper rigid corner
+				WX[l] = 0; WY[l] = 0;
+				break;
+			case 6: //right upper rigid corner
+				WX[l] = 0; WY[l] = 0;
+				break;
+			case 7: //right lower rigid corner
+				WX[l] = 0; WY[l] = 0;
+				break;
+			case 8: //left lower rigid corner
+				WX[l] = 0; WY[l] = 0;
+				break;
+			case 9: //inlet (from left)
+				WX[l] = -vibr_X * C[l] + dx1_forward(l, Phi);
+				WY[l] = -vibr_Y * C[l] + dy1(l, Phi);
+				break;
+				/*
+
+				if (W_BORDER == 0) { //dPhi/dn = 0
+				WX[l] = -vibr_X * C[l];
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				}
+				else if (W_BORDER == 1) { //W = 0
+				WX[l] = 0;
+				WY[l] = 0;
+				}
+				else if (W_BORDER == 2) {
+				WX[l] = 0;
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				}
+				else if (W_BORDER == 3) { //dW/dn = 0
+				WX[l] = (4.0*(-vibr_X*C[n3[l]] + dx1(n3[l], Phi)) - (-vibr_X*C[n3[n3[l]]] + dx1(n3[n3[l]], Phi))) / 3.0;
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				}
+				*/
+			case 10://outlet (to right)
+				WX[l] = -vibr_X * C[l] + dx1_back(l, Phi);
+				WY[l] = -vibr_Y * C[l] + dy1(l, Phi);
+				break;
+				/*
+				if (W_BORDER == 0) { //dPhi/dn = 0
+				WX[l] = -vibr_X*C[l];
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				}
+				else if (W_BORDER == 1) { //W = 0
+				WX[l] = 0;
+				WY[l] = 0;
+				}
+				else if (W_BORDER == 2) {
+				WX[l] = 0;
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				}
+				else if (W_BORDER == 3) { //dW/dn = 0
+				WX[l] = (4.0*(-vibr_X*C[n1[l]] + dx1(n1[l], Phi)) - (-vibr_X*C[n1[n1[l]]] + dx1(n1[n1[l]], Phi))) / 3.0;
+				WY[l] = -vibr_Y*C[l] + dy1(l, Phi);
+				}
+				*/
+			default:
+				break;
+			}
+		}
+	}
+}
+
+
 
 __global__ void reduction00(double *data, unsigned int n, double* reduced) {
 	extern __shared__ double shared[];
@@ -1542,7 +2290,7 @@ __global__ void chemical_potential_upstream(double *mu, double *C)
 			break;
 		case 10://outlet (to right)
 				//mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
-			mu[l] - extrapolate_forward(l, mu);
+			mu[l] = extrapolate_forward(l, mu);
 			break;
 		default:
 			break;
@@ -1641,7 +2389,7 @@ struct multi_cross {
 	unsigned int iter = 0;
 	unsigned int TOTAL_SIZE = 0;
 	int *n1, *n2, *n3, *n4;
-	unsigned int nxg, nyg;
+	unsigned int nxg, nyg, ng;
 	unsigned int nx, ny, offset;
 	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu;
 	double LX, LY;
@@ -2398,49 +3146,72 @@ struct multi_cross {
 
 	}
 
-	void write_linear_profile(string file_name, string head, double time, int step, double hx,
-		double *f1 = NULL, double *f2 = NULL, double *f3 = NULL, double *f4 = NULL, double *f5 = NULL, double *f6 = NULL) {
+	void write_linear_profile(string file_name, string head, double time, int step, double hx, double **f, int N_fields) {
 #ifdef __linux__ 
-		ofstream to_file(("linear/" + file_name + ".dat").c_str());
+		ofstream to_file(("horizontal_profile/" + file_name + ".dat").c_str());
 #endif
 #ifdef _WIN32
-		ofstream to_file(("linear\\" + file_name + ".dat").c_str());
+		ofstream to_file(("horizontal_profile\\" + file_name + ".dat").c_str());
 #endif
-
-		
 
 		int l, L;
 		to_file << head << " t=" << time << endl;
 		//for (unsigned int j = 0; j <= nyg; j = j + step) {
 		unsigned int j = nyg / 2;
-			for (unsigned int i = 0; i <= nxg; i = i + step) {
-				l = i + OFFSET*j; L = J[l];
-				//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
-				if (I[l] == 1) {
-					//to_file << i << " " << j << " " << f[L] << " " << t[L] << " " << L << " " << n1[L] << " " << n2[L] << " " << n3[L] << " " << n4[L] 	<< endl;
-					to_file << i << " " << hx*i;
-					if (f1 != NULL) to_file << " " << f1[L];
-					if (f2 != NULL) to_file << " " << f2[L];
-					if (f3 != NULL) to_file << " " << f3[L];
-					if (f4 != NULL) to_file << " " << f4[L];
-					if (f5 != NULL) to_file << " " << f5[L];
-					if (f6 != NULL) to_file << " " << f6[L];
-					to_file << endl;
+		for (unsigned int i = 0; i <= nxg; i = i + step) {
+			l = i + OFFSET*j; L = J[l];
+			//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
+			if (I[l] == 1) {
+				to_file << i << " " << hx*i;
+				for (int k = 0; k < N_fields; k++) {
+					to_file << " " << f[k][L];
 				}
-				else
-				{
-					to_file << "skip" << endl;
-					//to_file << i << " " << j << " " << NAN << endl;
-					//to_file << i << " " << j << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 	<< endl;
-				}
-
+				to_file << endl;
 			}
+			else
+			{
+				to_file << "skip" << endl;
+				//to_file << i << " " << j << " " << NAN << endl;
+				//to_file << i << " " << j << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 << " " << 0 	<< endl;
+			}
+
+		}
 		//}
 		to_file.close();
 
 	}
 
-	void write_field_tecplot(double blank, double hx, double hy, double *vx, double *vy, double *p, double *C, double *mu, string file_name, double time, int step, int iter) {
+	void write_section_profile(string file_name, string head, double time, int step, double hy, double **f, int N_fields, unsigned int i) {
+#ifdef __linux__ 
+		ofstream to_file(("vertical_profile/" + file_name + ".dat").c_str());
+#endif
+#ifdef _WIN32
+		ofstream to_file(("vertical_profile\\" + file_name + ".dat").c_str());
+#endif
+
+		int l, L;
+		to_file << head << " t=" << time << endl;
+		for (unsigned int j = 0; j <= nyg; j = j + step) {
+			l = i + OFFSET*j; L = J[l];
+			if (I[l] == 1) {
+				to_file << j << " " << hy*j;
+				for (int k = 0; k < N_fields; k++) {
+					to_file << " " << f[k][L];
+				}
+				to_file << endl;
+			}
+			else
+			{
+				to_file << "skip" << endl;
+			}
+
+		}
+		to_file.close();
+
+	}
+
+
+	void write_field_tecplot(double blank, double hx, double hy, string file_name, double time, int step, int iter, double **f, unsigned int N_fields, string head) {
 
 		ofstream to_file;
 		if (iter == 1)
@@ -2460,7 +3231,8 @@ struct multi_cross {
 		for (unsigned int i = 0; i <= nxg; i = i + step)
 			II++;
 
-		to_file << "VARIABLES=\"x\",\"y\",\"C\",\"mu\",\"vx\",\"vy\",\"p\"" << endl;
+		//to_file << "VARIABLES=\"x\",\"y\",\"C\",\"mu\",\"vx\",\"vy\",\"p\"" << endl;
+		to_file << head << endl;
 		to_file << "ZONE T=\"" + str_time + "\", " << "I=" << II << ", J=" << JJ << endl;
 
 		int l, L;
@@ -2469,11 +3241,20 @@ struct multi_cross {
 			for (unsigned int i = 0; i <= nxg; i = i + step) {
 				l = i + OFFSET*j; L = J[l];
 				if (I[l] == 1) {
-					to_file << hx*i << " " << hy*j << " " << C[L] << " " << mu[L] << " " << vx[L] << " " << vy[L] << " " << p[L] << endl;
+					//to_file << hx*i << " " << hy*j << " " << C[L] << " " << mu[L] << " " << vx[L] << " " << vy[L] << " " << p[L] << endl;
+					to_file << hx*i << " " << hy*j;
+					for (int k = 0; k < N_fields; k++) {
+						to_file << " " << f[k][L];
+					}
+					to_file << endl;
 				}
 				else
 				{
-					to_file << hx*i << " " << hy*j << " " << blank << " " << blank << " " << blank << " " << blank << " " << blank << endl;
+					to_file << hx*i << " " << hy*j;
+					for (int k = 0; k < N_fields; k++) {
+						to_file << " " << blank;
+					}
+					to_file << endl;
 				}
 
 			}
@@ -2539,7 +3320,7 @@ struct multi_cross {
 
 	}
 
-	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write, double timeq, double kk) {
+	void save(double *vx, double *vy, double *p, double *C, double *mu, unsigned int i_time, unsigned int i_write, double timeq, double kk, unsigned int extended = 0, double* vib = NULL) {
 
 		ofstream to_file("recovery.dat");
 		ofstream to_file2("recovery2.dat");
@@ -2549,9 +3330,13 @@ struct multi_cross {
 
 
 		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
+		{
 			to_file << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
+		}
 		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
+		{
 			to_file2 << vx[i] << " " << vy[i] << " " << p[i] << " " << C[i] << " " << mu[i] << endl;
+		}
 
 
 
@@ -2560,8 +3345,37 @@ struct multi_cross {
 		to_file2.close();
 
 	}
+	void save(double** f, unsigned int n, unsigned int i_time, unsigned int i_write, double timeq, double kk) {
 
-	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write, double &timeq, unsigned int &kk) {
+		ofstream to_file("recovery.dat");
+		ofstream to_file2("recovery2.dat");
+
+		to_file << i_time << " " << i_write << " " << timeq << " " << kk << endl;
+		to_file2 << i_time << " " << i_write << " " << timeq << " " << kk << endl;
+
+
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
+		{
+			for (unsigned int k = 0; k < n; k++) {
+				to_file << f[k][i] << " ";
+			}
+			to_file << endl;
+		}
+
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++)
+		{
+			for (unsigned int k = 0; k < n; k++) {
+				to_file2 << f[k][i] << " ";
+			}
+			to_file2 << endl;
+		}
+
+		to_file.close();
+		to_file2.close();
+
+	}
+
+	void recover(double *vx, double *vy, double *p, double *C, double *mu, unsigned int &i_time, unsigned int &i_write, double &timeq, unsigned int &kk, unsigned int extended = 0, double *vib = NULL) {
 		ifstream from_file("recovery.dat");
 
 		string str;
@@ -2585,6 +3399,40 @@ struct multi_cross {
 			ss >> substr; vy[i] = atof(substr.c_str());
 			ss >> substr; p[i] = atof(substr.c_str());
 			ss >> substr; C[i] = atof(substr.c_str());
+			if (extended) ss >> substr; vib[i] = atof(substr.c_str());
+		}
+
+
+
+
+
+
+		from_file.close();
+	}
+
+	void recover(double** f, unsigned int n, unsigned int& i_time, unsigned int& i_write, double& timeq, unsigned int& kk) {
+		ifstream from_file("recovery.dat");
+
+		string str;
+		string substr;
+		stringstream ss;
+
+
+		getline(from_file, str);
+
+		ss << str;
+		ss >> substr; i_time = atoi(substr.c_str());
+		ss >> substr; i_write = atoi(substr.c_str());
+		ss >> substr; timeq = atof(substr.c_str());
+		ss >> substr; kk = atoi(substr.c_str());
+
+
+		for (unsigned int i = 0; i < TOTAL_SIZE; i++) {
+			getline(from_file, str);
+			ss.str(""); ss.clear(); ss << str;
+			for (unsigned int k = 0; k < n; k++) {
+				ss >> substr; f[k][i] = atof(substr.c_str());
+			}
 		}
 
 
@@ -2622,6 +3470,64 @@ struct multi_cross {
 		from_file.close();
 	}
 
+	void read_grid_geometry() {
+		ifstream from_file("GRID.dat");
+		if (from_file.good()) {
+			cout << endl << "GRID.dat has been read" << endl << endl;
+		}
+
+
+		string str;
+		string substr;
+		stringstream ss;
+
+
+		getline(from_file, str);
+
+		ss << str;
+		ss >> substr; nx = nxg = atoi(substr.c_str());
+		ss >> substr; ny = nyg = atoi(substr.c_str());
+		ss >> substr; offset = OFFSET = atoi(substr.c_str());
+		ss >> substr; TOTAL_SIZE = atoi(substr.c_str());
+		getline(from_file, str); //head 
+
+		n1 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n2 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n3 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		n4 = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		J_back = (int*)malloc(TOTAL_SIZE * sizeof(int));
+		t = (int*)malloc(TOTAL_SIZE * sizeof(int));
+
+		I = new int[(nxg + 1) * (nyg + 1)];
+		J = new int[(nxg + 1) * (nyg + 1)];
+
+		int L, l;
+		for (int j = 0; j <= nyg; j++) {
+			for (int i = 0; i <= nxg; i++) {
+				getline(from_file, str);  ss.str(""); ss.clear(); ss << str; //read a line
+				L = i + OFFSET * j;
+				ss >> substr; I[L] = atoi(substr.c_str());
+				ss >> substr; // i
+				ss >> substr; // j
+				ss >> substr; J[L] = atoi(substr.c_str());
+				if (I[L] == 1) {
+					l = J[L];
+					ss >> substr; t[l] = atoi(substr.c_str());
+					ss >> substr; J_back[l] = atoi(substr.c_str());
+					ss >> substr; n1[l] = atoi(substr.c_str());
+					ss >> substr; n2[l] = atoi(substr.c_str());
+					ss >> substr; n3[l] = atoi(substr.c_str());
+					ss >> substr; n4[l] = atoi(substr.c_str());
+				}
+
+
+
+			}
+		}
+
+
+		from_file.close();
+	}
 
 	void linear_pressure(double *p, double hx, double hy, double cosA, double sinA, double Lx, double Ly, double coefficient = 1) {
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
@@ -2634,7 +3540,7 @@ struct multi_cross {
 	void fill_gradually(double *C, double hx, double hy, double delta, double shift) {
 		unsigned int i, j;
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
-			i = iG(l); 	j = jG(l);
+			i = iG(l); j = jG(l);
 			C[l] = 0.5*tanh((i*hx - shift) / delta);
 		}
 	}
@@ -2643,7 +3549,7 @@ struct multi_cross {
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
 			i = iG(l); 	j = jG(l);
 			double x = i*hx, y = j*hy;
-			
+
 			if (sqrt(pow(x - x0, 2) + pow(y - y0, 2)) < R0) {
 				C[l] = C_inner;
 			}
@@ -2652,6 +3558,18 @@ struct multi_cross {
 			}
 		}
 	}
+
+	void fill_horizontal_way(double *C, double hx, double hy, double eq_C, double y0, double amp, double k, double delta) {
+		unsigned int i, j;
+		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
+			i = iG(l); 	j = jG(l);
+			double x = i*hx, y = j*hy;
+
+			C[l] = eq_C*(tanh((y - y0 - amp*cos(k*x)) / delta));
+
+		}
+	}
+
 	void fast_test_writing(double *f) {
 
 		ofstream to_file("test_field.dat");
@@ -2882,6 +3800,102 @@ struct multi_cross {
 		return vol;
 	}
 
+	double change_sign_at_X(double hx, double hy, double *F, unsigned int j) {
+		int l1, l2, L1, L2;
+		double x = 0;
+		double F_ = 0;
+		//unsigned int j = nyg / 2;
+		l1 = 0 + OFFSET*j; L1 = J[l1];
+
+		for (unsigned int i = 1; i <= nxg; i++) {
+			l2 = i + OFFSET*j; L2 = J[l2];
+
+
+			if (I[l2] == 1)
+			{
+				if (F[L2] * F[L1] <= 0) {
+					x = hx*(F_ - F[L1]) / (F[L2] - F[L1]) + ((i - 1)*hx);
+					return x;
+				}
+				L1 = L2;
+			}
+			else
+			{
+				cout << "not a good sign you see it" << endl;
+				exit(0);
+			}
+
+
+		}
+		return x;
+	}
+	double pressure_jump(double hx, double hy, double *p, double x_, double border_width) {
+		int l, L;
+		unsigned int j = nyg / 2;
+
+		double P1 = 0, P2 = 0;
+		int i1, i2, n1 = 0, n2 = 0;
+
+
+		i1 = (int)((x_ - border_width) / hx);
+		i2 = (int)((x_ + border_width) / hx);
+		for (unsigned int i = 0; i <= nxg; i++) {
+			l = i + OFFSET*j; L = J[l];
+
+			if (I[l] == 1) {
+
+				if (i < i1) {
+					P1 += p[L];
+					n1++;
+				}
+				if (i > i2) {
+					P2 += p[L];
+					n2++;
+				}
+
+			}
+			else
+			{
+				cout << "not a good sign you see it" << endl;
+				exit(0);
+			}
+
+
+		}
+
+		P1 = P1 / n1;
+		P2 = P2 / n2;
+		double ret = abs(P2 - P1);
+		if (!std::isfinite(ret)) return 0.0;
+		else return ret;
+	}
+
+	double flow_rate(double hx, double hy, double *vx, double Ly, unsigned int i) {
+		int l, L;
+		double Q = 0.0;
+		for (unsigned int j = 0; j <= nyg; j++) {
+			l = i + OFFSET*j; L = J[l];
+
+
+			if (I[l] == 1) {
+				Q += vx[L];
+			}
+			else
+			{
+				cout << "not a good sign you see it" << endl;
+				exit(0);
+			}
+		}
+
+		Q = Q * hy / Ly;
+		return Q;
+	}
+
+
+
+
+
+
 	double tension(double hx, double hy, double *C) {
 		double ten = 0;
 		//unsigned int lr, lu, lru;
@@ -2935,10 +3949,10 @@ struct multi_cross {
 #define DY(F) 0.5 / hy * (F[n2[l]] - F[n4[l]])
 #define DX2(F) 1.0 / (hx * hx) * (F[n3[l]] + F[n1[l]] - 2.0 * F[l])
 #define DY2(F) 1.0 / (hy * hy) * (F[n2[l]] + F[n4[l]] - 2.0 * F[l])
-//#define DXY(F) (-F[l - 1 + OFFSET] + F[l + 1 + OFFSET] - F[l + 1 - OFFSET] + f[l - 1 - OFFSET]) / hx / hy / 4.0;
+	//#define DXY(F) (-F[l - 1 + OFFSET] + F[l + 1 + OFFSET] - F[l + 1 - OFFSET] + f[l - 1 - OFFSET]) / hx / hy / 4.0;
 #define DXY(F) (-F[n1[n2[l]]] + F[n3[n2[l]]] - F[n3[n4[l]]] + F[n1[n4[l]]]) / hx / hy / 4.0
 
-	void curvature_direct(double *C, double hx, double hy, double *curv) {
+	void curvature_direct(double *C, double hx, double hy, double *curv, double add = 0.0) {
 		double dCx, dCy, abs_dC;
 		unsigned int i, j;
 		for (unsigned int l = 0; l < TOTAL_SIZE; l++) {
@@ -2947,9 +3961,9 @@ struct multi_cross {
 			if (t[l] == 0) {
 				dCx = DX(C); dCy = DY(C);
 				abs_dC = sqrt(dCx*dCx + dCy*dCy);
-				double abs_dC3 = abs_dC*abs_dC*abs_dC + 0.001;
+				double abs_dC3 = abs_dC*abs_dC*abs_dC + add;
 
-				curv[l] = (dCx*dCx*DY2(C) + dCy*dCy*DX2(C) - 2.0*dCx*dCy*DXY(C))/ abs_dC3;
+				curv[l] = (dCx*dCx*DY2(C) + dCy*dCy*DX2(C) - 2.0*dCx*dCy*DXY(C)) / abs_dC3;
 				//if (abs_dC < 1e-6) curv[l] = 0;
 			}
 			else {
@@ -2989,7 +4003,7 @@ struct multi_cross {
 				double abs_dC = sqrt(dCx*dCx + dCy*dCy) + 0.001;
 				nx[l] = dCx / abs_dC;
 				ny[l] = dCy / abs_dC;
-				
+
 			}
 			else {
 				nx[l] = 0.0;
@@ -3010,6 +4024,7 @@ struct multi_cross {
 	void check() {
 		int l, L;
 		ofstream write("geomSettingCheck.txt");
+		write << "i, j, 1, L, t[L], n1[L], n2[L], n3[L], n4[L]" << endl;
 		for (unsigned int i = 0; i <= nxg; i++) {
 			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
@@ -3241,7 +4256,7 @@ struct multi_line {
 		for (unsigned int i = 0; i <= nxg; i++) {
 			for (unsigned int j = 0; j <= nyg; j++) {
 				l = i + OFFSET*j; L = J[l];
-			//	l1 = i - 1 + OFFSET*j; 				l2 = i + OFFSET*j + OFFSET; 				l3 = i + 1 + OFFSET*j;				l4 = i + OFFSET*j - OFFSET;
+				//	l1 = i - 1 + OFFSET*j; 				l2 = i + OFFSET*j + OFFSET; 				l3 = i + 1 + OFFSET*j;				l4 = i + OFFSET*j - OFFSET;
 				if (I[l] == 1) {
 					if (I[l] == 1) {
 						if (n1[L] == -1 && n2[L] != -1 && n3[L] != -1 && n4[L] != -1)
@@ -3798,10 +4813,10 @@ void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsig
 
 //pressure transformation to real pressure
 void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int *n1, int *n2, int *n3, int *n4, int *J_back,
-	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA, unsigned int PHASE) {
+	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA, unsigned int PHASE, double VV_h, double vibrX, double vibrY) {
 	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись,
 	осознание того, как надо было, пришло потом, когда переписывать заново стало долго*/
-
+	double WX = 0.0, WY = 0.0;
 	int left, right, up, down, left2, right2, up2, down2;
 
 	for (unsigned int l = 0; l < size; l++) {
@@ -3818,14 +4833,9 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 		left2 = n1[left]; right2 = n3[right]; up2 = n2[up]; down2 = n4[down];
 
 		p_true[l] = p[l] +
-			(
-				+mu[l] * C[l]
-				- A*pow(C[l], 2) - pow(C[l], 4)
-				+ Gr*(
-				(J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA +
-					(J_back[l] / OFFSET) * hy*sinA
-					)
-				) / M;
+			(+mu[l] * C[l] - A*pow(C[l], 2) - pow(C[l], 4)) / M
+			+ Gr*((J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA + (J_back[l] / OFFSET) * hy*sinA);
+
 
 		switch (t[l])
 		{
@@ -3833,6 +4843,12 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			p_true[l] += -0.5*Ca / M*(
 				pow((0.5*(C[right] - C[left]) / hx), 2)
 				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			if (VV_h > 0) {
+				WX = -C[l] * vibrX + 0.5*(C[right] - C[left]) / hx;
+				WY = -C[l] * vibrY + 0.5*(C[up] - C[down]) / hy;
+
+				p_true[l] += -VV_h*0.5*(WX*WX + WY*WY);
+			}
 			break;
 		case 1: //left rigid
 			p_true[l] += -0.5*Ca / M*(
@@ -3905,7 +4921,15 @@ void signalHandler(int signum) {
 
 	exit(signum);
 }
-
+void create_folder(string name) {
+#ifdef __linux__ 
+	string str = "mkdir -p " + name + "/";
+	system(str.c_str());
+#endif
+#ifdef _WIN32
+	CreateDirectoryA(name.c_str(), NULL);
+#endif
+}
 
 
 
@@ -3915,17 +4939,9 @@ int main(int argc, char **argv) {
 	state = 0;
 	signal(SIGINT, signalHandler);
 
-
-#ifdef __linux__ 
-	system("mkdir -p fields/");
-	system("mkdir -p linear/");
-#endif
-
-#ifdef _WIN32
-	CreateDirectoryA("fields", NULL);
-	CreateDirectoryA("linear", NULL);
-#endif
-
+	cout << "Version: " << ThisSoftwareVersion << endl;
+	cout << "Compilation time: " << __DATE__ << " " << __TIME__ << endl;
+	cout << "command line: " << endl; for (int i = 0; i < argc; i++) cout << i << ": " << argv[i] << endl;
 
 	int devID = 0, deviceCount = 0;
 	cudaGetDeviceCount(&deviceCount);
@@ -3935,36 +4951,43 @@ int main(int argc, char **argv) {
 	double timer1, timer2;
 	double pi = 3.1415926535897932384626433832795;
 	double eps0 = 1e-5;
-	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu, *zero;  //_d - device (GPU) 
-	double *C_h, *p_h, *vx_h, *vy_h, *mu_h, *p_true_h, *zero_h;  //_h - host (CPU)
+	double *C0, *C, *p, *p0, *ux, *uy, *vx, *vy, *mu, *zero, *Phi, *Phi0, *WX, *WY;  //_d - device (GPU) 
+	double *C_h, *p_h, *vx_h, *vy_h, *mu_h, *p_true_h, *zero_h, *Phi_h, *WX_h, *WY_h;  //_h - host (CPU)
 	double *curv1, *curv2, *nx_dC, *ny_dC;
-	double *psiav_array; 		 //  temporal variables //psiav0_h, eps_h *psiav_d, *psiav_array_h,   *psiav_h;
-	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, psiav, psiav0, eps, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h, dP_h; //parameters 
+	double *psiav_array, *psiav_array_Phi; 		 //  temporal variables //psiav0_h, eps_h *psiav_d, *psiav_array_h,   *psiav_h;
+	double hx_h, hy_h, Lx_h, Ly_h, tau_h, tau_p_h, psiav, psiav0, eps, A_h, Ca_h, Gr_h, Pe_h, Re_h, MM_h, dP_h, Gs_h; //parameters 
 	double alpha_h, sinA_h, cosA_h, theta_h, sinTh_h, cosTh_h;
 	double Ek, Ek_old, Vmax, Q_in, Q_out, C_average, Cv;
-	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, offset_h, kk, k = 0, tt, write_i = 0, each = 1, stop = 0;					  //parameters
+	unsigned int nx_h, ny_h, Matrix_X, Matrix_Y, iter = 0, offset_h, Phi_kk, kk, k = 0, tt, write_i = 0, each = 1, stop = 0;					  //parameters
 	double time_fields, time_recovery, time_display;
 	double timeq = 0.0, C_av, C_plus, C_minus;
 	double tecplot, limit_timeq;
 	bool copied = false;
 	unsigned int linear_pressure, fill_gradually, wetting, read_C, stop_at_exit;
-	unsigned int sphere_distribution, curv_calc, linear_profile;
-	double fill_gradually_x, sphere_x0, sphere_y0, sphere_R0;
+	unsigned int sphere_distribution, curv_calc, vibration, simple_geometry = 0;
+	double fill_gradually_x;
 	unsigned int reset_timeq, invert_initial_C, reset_velocity, reset_pressure;
 	unsigned int PHASE_h, DIFFUSION_h;
 	string geometry;
 
 	//1 is 'yes' / true, 0 is 'no' / false
-	unsigned int clean_fields;
+	//unsigned int clean_fields;
 	unsigned int picture_switch = 1; //write fields to a file?
 	unsigned int read_switch = 1; //read to continue or not? 
 
 
 								  //reading_parameters(ny_h, nx_h, each_t, each, Matrix_X, Matrix_Y, tau_h, A_h, Ca_h, Gr_h, Pe_h, Re_h, alpha_h, MM_h, tecplot, PHASE_h);
-
+	create_folder("fields");
 	string file_name = "inp.dat";
 	if (argc == 2) file_name = argv[1];
 	ReadingFile File(file_name);
+#define constUint(VAR)  \
+	unsigned int VAR##_h; File.reading<unsigned int>(VAR##_h, #VAR, 0); \
+	cudaMemcpyToSymbol(VAR, &VAR##_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
+#define constDouble(VAR)  \
+	double VAR##_h; File.reading<double>(VAR##_h, #VAR, 0.0); \
+	cudaMemcpyToSymbol(VAR, &VAR##_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+
 
 
 	File.reading<unsigned int>(ny_h, "ny", 200);
@@ -3977,13 +5000,14 @@ int main(int argc, char **argv) {
 	File.reading<unsigned int>(Matrix_Y, "Matrix_Y", 3);
 	File.reading<double>(tau_h, "tau", 5.0e-5);
 	File.reading<double>(A_h, "A", -0.5);
-	File.reading<double>(Ca_h, "Ca", 4e-4);
+	if (File.reading<double>(Ca_h, "Ca", 4e-4) == 0) File.reading<double>(Ca_h, "Cn", 4e-4);
 	File.reading<double>(Gr_h, "Gr", 0.0);
-	File.reading<double>(Pe_h, "Pe", 1e+4);
+	if (File.reading<double>(Pe_h, "Pe", 1e+4) == 0) File.reading<double>(Pe_h, "Sc", 1e+4);
 	File.reading<double>(Re_h, "Re", 1.0);
 	File.reading<double>(alpha_h, "alpha", 0.0);
 	File.reading<double>(theta_h, "theta", 90.0);
 	File.reading<double>(MM_h, "MM", 1.0);
+	File.reading<double>(Gs_h, "Gs", 0.0);
 	File.reading<double>(dP_h, "dP", 1.0);
 	File.reading<double>(tecplot, "tecplot", 10000);
 	File.reading<unsigned int>(PHASE_h, "Phase_field", 1, 0, 1);
@@ -4005,20 +5029,31 @@ int main(int argc, char **argv) {
 	File.reading<unsigned int>(read_C, "read_concentration", 0, 0, 1);
 	File.reading<unsigned int>(stop_at_exit, "stop_at_exit", 0, 0, 1);
 	File.reading<unsigned int>(sphere_distribution, "sphere", 0, 0, 1);
-	File.reading<double>(sphere_x0, "sphere_x0", 0.1);
-	File.reading<double>(sphere_y0, "sphere_y0", 0.1);
-	File.reading<double>(sphere_R0, "sphere_R0", 0.1);
 	File.reading<unsigned int>(curv_calc, "curv_calc", 0, 0, 1);
-	File.reading<unsigned int>(linear_profile, "linear_profile", 0, 0, 1);
+	unsigned int horizontal_profile;	File.reading<unsigned int>(horizontal_profile, "horizontal_profile", 0, 0, 1); if (horizontal_profile) create_folder("horizontal_profile");
+	unsigned int vertical_profile;		File.reading<unsigned int>(vertical_profile, "vertical_profile", 0, 0, 1); if (vertical_profile) create_folder("vertical_profile");
 	File.reading<double>(Lx_h, "Lx", 0.0);
 	File.reading<double>(Ly_h, "Ly", 0.0);
-
-
+	File.reading<unsigned int>(vibration, "vibration", 0, 0, 3);
+	double Amp_h;		File.reading<double>(Amp_h, "Amp", 0.0);
+	double Omega_h;		File.reading<double>(Omega_h, "Omega", 0.0);
+	double vibr_X_h;		File.reading<double>(vibr_X_h, "vibr_X", 0.0, 0.0, 1.0);
+	double vibr_Y_h;		File.reading<double>(vibr_Y_h, "vibr_Y", 0.0, 0.0, 1.0);
+	double VV_h;			File.reading<double>(VV_h, "VV", 0.0);  if (vibration == 0) { VV_h = 0; }
+	unsigned int integrals_add1; File.reading<unsigned int>(integrals_add1, "integrals_add1", 0);
+	string filling;  File.reading_string(filling, "filling", "no");
+	//unsigned int W_BORDER_h; File.reading<unsigned int>(W_BORDER_h, "W_BORDER", 0);
+	//cudaMemcpyToSymbol(W_BORDER, &W_BORDER_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
+	//unsigned int PHI_BORDER_LEFT_h; File.reading<unsigned int>(PHI_BORDER_LEFT_h, "PHI_BORDER_LEFT", 0);
+	//cudaMemcpyToSymbol(PHI_BORDER_LEFT, &PHI_BORDER_LEFT_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
+	//unsigned int PHI_BORDER_RIGHT_h; File.reading<unsigned int>(PHI_BORDER_RIGHT_h, "PHI_BORDER_RIGHT", 0);
+	//cudaMemcpyToSymbol(PHI_BORDER_RIGHT, &PHI_BORDER_RIGHT_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
 	//File.reading<unsigned int>(clean_fields, "clean_fields", 1, 0, 1);
-
-
-
-
+	constUint(W_BORDER);
+	constUint(PHI_border_left);
+	constUint(PHI_border_right);
+	constDouble(PHI_value_left);
+	constDouble(PHI_value_right);
 
 
 	//GPU setting
@@ -4049,7 +5084,8 @@ int main(int argc, char **argv) {
 	tau_p_h = 0.20*hx_h*hx_h;
 	Ek = 0; Ek_old = 0;
 	kk = 1000000; //Poisson iteration limit 
-
+	Phi_kk = 1000000;
+	//geometry
 	{
 		if (geometry == "matrix") {
 			Geom.set_global_size(nx_h, ny_h, Matrix_X, Matrix_Y);
@@ -4081,16 +5117,27 @@ int main(int argc, char **argv) {
 			Geom.set_neighbor_box();
 			Geom.set_global_id_box();
 			Geom.check();
-		}
-		else if (geometry == "sphere_in_box") {
-			// ???
+			simple_geometry = 1;
 		}
 		else if (geometry == "tube") {
 			Geom.set_global_size_box(nx_h, ny_h);
 			Geom.set_type_tube();
 			Geom.set_neighbor_box();
 			Geom.set_global_id_box();
+			Geom.check();
+			simple_geometry = 1;
 		}
+		else if (geometry == "grid") {
+			Geom.read_grid_geometry();
+			File.reading<double>(hy_h, "h_step", 0.001);
+			hx_h = hy_h;
+			tau_p_h = 0.20 * hx_h * hx_h;
+			nx_h = Geom.nx;
+			ny_h = Geom.ny;
+			offset_h = Geom.offset; //sure you need all this?
+			Geom.check();
+		}
+
 
 
 		else {
@@ -4098,9 +5145,6 @@ int main(int argc, char **argv) {
 			return 0;
 		}
 	}
-
-
-
 
 
 
@@ -4136,8 +5180,8 @@ int main(int argc, char **argv) {
 	stupid_step(Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.t, Geom.J_back, Geom.TOTAL_SIZE);
 	cudaCheckError()
 
-	//total Length and Width of the porous matrix
-	Lx_h = hx_h * (Geom.nxg);
+		//total Length and Width of the porous matrix
+		Lx_h = hx_h * (Geom.nxg);
 	Ly_h = hy_h * (Geom.nyg);
 
 	cudaDeviceSynchronize();
@@ -4187,7 +5231,7 @@ int main(int argc, char **argv) {
 	(s != 1) ? std::cout << "sub array for the Poisson solver = " << Np[1] << endl :
 		std::cout << "it shouldn't be here" << endl;
 	double *arr[10];
-
+	double *arr2[10];
 
 	//allocating memory for arrays on CPU and initializing them 
 	{
@@ -4206,7 +5250,7 @@ int main(int argc, char **argv) {
 			for (unsigned int l = 0; l < size_l; l++) { C_h[l] = 0.5; mu_h[l] = 0; p_h[l] = 0.0; p_true_h[l] = 0.0; vx_h[l] = 0.0; vy_h[l] = 0.0; }
 		}
 		if (curv_calc == 1) {
-			curv1 = (double*)malloc(size_b); 
+			curv1 = (double*)malloc(size_b);
 			curv2 = (double*)malloc(size_b);
 			nx_dC = (double*)malloc(size_b);
 			ny_dC = (double*)malloc(size_b);
@@ -4217,26 +5261,43 @@ int main(int argc, char **argv) {
 				ny_dC[l] = 0.0;
 			}
 		}
+		if (vibration == 1) {
+			Phi_h = (double*)malloc(size_b);
+			WX_h = (double*)malloc(size_b);
+			WY_h = (double*)malloc(size_b);
+			for (unsigned int l = 0; l < size_l; l++) {
+				Phi_h[l] = 0.0;
+				WX_h[l] = 0.0;
+				WY_h[l] = 0.0;
+			}
+		}
 	}
 
 
 	if (linear_pressure == 1) {
 		Geom.linear_pressure(p_h, hx_h, hy_h, cosA_h, sinA_h, Lx_h, Ly_h, 8.0 / Re_h);
 	}
-	if (fill_gradually == 1) {
+	if (filling == "shift") {
 		double delta = sqrt(Ca_h / 0.5);
-		Geom.fill_gradually(C_h, hx_h, hy_h, delta, 0.5);
+		Geom.fill_gradually(C_h, hx_h, hy_h, delta, fill_gradually_x);
 	}
-	if (sphere_distribution == 1) {
-		sphere_x0 = Lx_h * 0.5;
-		sphere_y0 = Ly_h * 0.5;
-		//sphere_R0 = 0.2;
+	if (filling == "sphere") {
+		double sphere_x0, sphere_y0, sphere_R0;
+		double C_outer, C_inner;
+		File.reading<double>(sphere_x0, "sphere_x0", Lx_h * 0.5);
+		File.reading<double>(sphere_y0, "sphere_y0", Ly_h * 0.5);
+		File.reading<double>(sphere_R0, "sphere_R0", 0.1);
+		File.reading<double>(C_outer, "sphere_C_outer", +sqrt(abs(-A_h) / 2.0));
+		File.reading<double>(C_inner, "sphere_C_inner", -sqrt(abs(-A_h) / 2.0));
 
-		double C_outer = +sqrt(-A_h / 2.0);
-		double C_inner = -sqrt(-A_h / 2.0);
 		Geom.fill_with_sphere(C_h, hx_h, hy_h, sphere_x0, sphere_y0, sphere_R0, C_outer, C_inner);
 	}
+	if (filling == "horizontal") {
+		double delta = sqrt(Ca_h / 0.5);
+		double horizontal_amp; File.reading<double>(horizontal_amp, "horizontal_amp", 0);
+		Geom.fill_horizontal_way(C_h, hx_h, hy_h, 0.5, Ly_h*0.5, horizontal_amp, 2.0*Pi / Lx_h, delta);
 
+	}
 
 
 
@@ -4267,6 +5328,13 @@ int main(int argc, char **argv) {
 			cudaMalloc((void**)&mu, size_b);
 			(s != 1) ? cudaMalloc((void**)&psiav_array, sizeof(double)*Np[1]) : cudaMalloc((void**)&psiav_array, sizeof(double));
 		}
+		if (vibration == 1) {
+			cudaMalloc((void**)&Phi, size_b);
+			cudaMalloc((void**)&Phi0, size_b);
+			cudaMalloc((void**)&WX, size_b);
+			cudaMalloc((void**)&WY, size_b);
+			(s != 1) ? cudaMalloc((void**)&psiav_array_Phi, sizeof(double)*Np[1]) : cudaMalloc((void**)&psiav_array_Phi, sizeof(double));
+		}
 	}
 
 	//for Poisson procedure shortness 
@@ -4274,12 +5342,20 @@ int main(int argc, char **argv) {
 	for (unsigned int i = 1; i <= s; i++)
 		arr[i] = psiav_array;
 
+	if (vibration == 1) {
+		arr2[0] = Phi;
+		for (unsigned int i = 1; i <= s; i++)
+			arr2[i] = psiav_array_Phi;
+	}
 
 
 
 
 	//ofstream is a class to write data in a file, ifstream is a class to read data from a file
 	ofstream integrals;
+	ofstream test_output; int test_output_switch;
+	File.reading<int>(test_output_switch, "test_output", 0, 0, 1);
+	if (test_output_switch) test_output.open("test_output.dat");
 	ofstream k_number;
 	ifstream read;
 	read.open("recovery.dat");
@@ -4305,7 +5381,20 @@ int main(int argc, char **argv) {
 
 	//continue
 	if (read_switch == 1) {
-		Geom.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
+
+
+		//Geom.recover(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
+
+		double* var[10];
+		unsigned int n = 0;
+		var[n] = vx_h; n++;
+		var[n] = vy_h; n++;
+		var[n] = p_h; n++;
+		var[n] = C_h; n++;
+		var[n] = mu_h; n++;
+		if (vibration == 1) { var[n] = Phi_h; n++; }
+		Geom.recover(var, n, iter, write_i, timeq, kk);
+
 		if (reset_timeq == 0) {
 			integrals.open("integrals.dat", std::ofstream::app);
 			cout << "from time: " << timeq << " iter:" << iter << endl;
@@ -4345,7 +5434,12 @@ int main(int argc, char **argv) {
 		cudaMemcpy(ux, vx_h, size_b, cudaMemcpyHostToDevice); 	cudaMemcpy(uy, vy_h, size_b, cudaMemcpyHostToDevice);
 		cudaMemcpy(vx, vx_h, size_b, cudaMemcpyHostToDevice); 	cudaMemcpy(vy, vy_h, size_b, cudaMemcpyHostToDevice);
 		cudaMemcpy(mu, mu_h, size_b, cudaMemcpyHostToDevice);
+		if (vibration == 1) {
+			cudaMemcpy(Phi, Phi_h, size_b, cudaMemcpyHostToDevice);
+			cudaMemcpy(Phi0, Phi_h, size_b, cudaMemcpyHostToDevice);
+		}
 	}
+
 
 	//copying some constant parameters to the fast constant memory
 	{
@@ -4361,6 +5455,7 @@ int main(int argc, char **argv) {
 		cudaMemcpyToSymbol(A, &A_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(Ca, &Ca_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(Gr, &Gr_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(Gs, &Gs_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(Pe, &Pe_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(Re, &Re_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(MM, &MM_h, sizeof(double), 0, cudaMemcpyHostToDevice);
@@ -4381,6 +5476,11 @@ int main(int argc, char **argv) {
 		cudaMemcpyToSymbol(TOTAL_SIZE, &Geom.TOTAL_SIZE, sizeof(int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(PHASE, &PHASE_h, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
 		cudaMemcpyToSymbol(dP, &dP_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(Amp, &Amp_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(Omega, &Omega_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(VV, &VV_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(vibr_X, &vibr_X_h, sizeof(double), 0, cudaMemcpyHostToDevice);
+		cudaMemcpyToSymbol(vibr_Y, &vibr_Y_h, sizeof(double), 0, cudaMemcpyHostToDevice);
 	}
 
 
@@ -4391,6 +5491,7 @@ int main(int argc, char **argv) {
 		PrintVar(wetting)
 			PrintVar(DIFFUSION_h)
 			PrintVar(geometry)
+			PrintVar(filling)
 	}
 
 
@@ -4446,7 +5547,11 @@ int main(int argc, char **argv) {
 
 
 
-	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back, tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back, tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
+
+
+
+
 
 
 
@@ -4455,6 +5560,43 @@ int main(int argc, char **argv) {
 		while (true) {
 
 			iter = iter + 1; 	timeq = timeq + tau_h;
+
+			//Poisson equation for pulsation potential
+			if (vibration == 1)
+			{
+
+				double eps_Phi = 1.0;
+				double psiav0_Phi = -1.0;
+				double psiav_Phi = 0.0;
+				unsigned int k_Phi = 0;
+				//while ((eps_Phi > eps0*psiav0_Phi && k_Phi < Phi_kk))
+				while ((eps_Phi > eps0*psiav0_Phi))
+				{
+
+					psiav_Phi = 0.0;  k_Phi++;
+					Poisson_Phi << <gridD, blockD >> >(Phi, Phi0, C0, WX, WY);
+
+
+					for (unsigned int i = 0; i < s; i++)
+						reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr2[i], Np[i], arr2[i + 1]);
+					swap_one << <gridD, blockD >> > (Phi0, Phi);
+					cudaMemcpy(&psiav_Phi, psiav_array_Phi, sizeof(double), cudaMemcpyDeviceToHost);
+
+					eps_Phi = abs(psiav_Phi - psiav0_Phi); 	psiav0_Phi = psiav_Phi;
+
+					if (k_Phi % 1000 == 0) {
+						cout << "Phi_iter=" << k_Phi << " " << eps_Phi << endl;
+					}
+				}
+				Phi_kk = k_Phi;
+
+				if (iter % (int)(tt *time_display) == 0 || iter == 1) {
+					cout << "Phi_iter=" << Phi_kk << endl;
+				}
+				Phi_normalization << < gridD, blockD >> > (Phi);
+				WW_from_Phi << < gridD, blockD >> > (WX, WY, Phi, C0);
+			}
+
 
 			if (DIFFUSION_h == 1) { //only diffusion
 
@@ -4479,7 +5621,24 @@ int main(int argc, char **argv) {
 					if (PHASE_h == 1) {
 						chemical_potential << <gridD, blockD >> > (mu, C);
 						//quasi_velocity_upstream << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
-						quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+
+						switch (vibration)
+						{
+						case 0: //as it is
+							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+							break;
+						case 1: //const initial concentration at walls, which is not washed out
+							quasi_velocity_pulsation_with_Phi << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq, Phi, WX, WY);
+							break;
+						case 2: //ongoing concentration devours initial one
+							quasi_velocity_pulsation << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq);
+							break;
+						case 3: //surface energy formulation by Jacqmin // not finished 
+							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+							break;
+						default:
+							break;
+						}
 
 						switch (wetting)
 						{
@@ -4495,29 +5654,58 @@ int main(int argc, char **argv) {
 							break;
 						case 3: //surface energy formulation by Jacqmin // not finished 
 							concentration_surface_energy_wetting << < gridD, blockD >> > (C, C0, vx, vy, mu);
+							break;
 						default:
 							break;
 						}
 					}
 					else if (PHASE_h == 0) {
 						chemical_potential_Gr << <gridD, blockD >> > (mu);
-						quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+
+						switch (vibration)
+						{
+						case 0: //as it is
+							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+							//quasi_velocity_no_phase_field << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+							break;
+						case 1: //const initial concentration at walls, which is not washed out
+							quasi_velocity_pulsation_with_Phi << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq, Phi, WX, WY);
+							break;
+						case 2: //ongoing concentration devours initial one
+							quasi_velocity_pulsation << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq);
+							break;
+						case 3: //surface energy formulation by Jacqmin // not finished 
+							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
+							break;
+						default:
+							break;
+						}
+
 						//if (timeq < 1)
 						concentration << < gridD, blockD >> > (C, C0, vx, vy, C0);
 						//else concentration_no_input_C << < gridD, blockD >> > (C, C0, vx, vy, C0);
 					}
 				}
 
+
+
+
+
 				//2nd step, Poisson equation for pressure 
 				{
-					eps = 1.0; 		psiav0 = 0.0;		psiav = 0.0;		k = 0;
+					eps = 1.0; 		psiav0 = -1.0;		psiav = 0.0;		k = 0;
 					//while (eps > eps0*psiav0 || k < 10)
 					//while (eps > eps0*psiav0 )
-					while (eps > eps0*psiav0 && k < kk)
+					while ((eps > eps0*psiav0 && k < kk))
 					{
 
 						psiav = 0.0;  k++;
-						Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
+						if (vibration == 1) Poisson_pulsation_Phi << <gridD, blockD >> > (p, p0, ux, uy, mu, C, Phi, WX, WY);
+						else if (vibration == 3) Poisson_pulsation << <gridD, blockD >> >(p, p0, ux, uy, mu, C, timeq);
+						else Poisson << <gridD, blockD >> > (p, p0, ux, uy, mu, C);
+
+
+
 
 						for (unsigned int i = 0; i < s; i++)
 							reduction00 << < Gp[i], 1024, 1024 * sizeof(double) >> > (arr[i], Np[i], arr[i + 1]);
@@ -4534,7 +5722,11 @@ int main(int argc, char **argv) {
 
 				}
 				kk = k;
-				//cout << "p_iter=" << k << endl;
+
+				if (iter % (int)(tt *time_display) == 0 || iter == 1) {
+					cout << "p_iter=" << k << endl;
+				}
+
 
 				//3rd step, velocity correction and swapping field values
 				velocity_correction << <gridD, blockD >> > (vx, vy, ux, uy, p);
@@ -4556,7 +5748,7 @@ int main(int argc, char **argv) {
 				copied = true;
 
 				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
 
 				double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av;
 				velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
@@ -4570,11 +5762,12 @@ int main(int argc, char **argv) {
 				Geom.X_averaged_in_each_phase(hx_h, hy_h, C_h, vx_h, vx_plusAv, vx_minusAv, vx_Av);
 
 
+				//Display
 				timer
 					cout << "t= " << tau_h*iter << endl;
 				cout << "Vmax= " << Vmax << endl;
 				cout << "Ek= " << Ek << endl;
-				cout << "dEk= " << abs(Ek - Ek_old) << endl;
+				cout << "dEk= " << (Ek - Ek_old) << endl;
 				cout << "p_iter=" << k << endl;
 				cout << "Q_in=" << Q_in << endl;
 				cout << "Q_out=" << Q_out << endl;
@@ -4585,11 +5778,17 @@ int main(int argc, char **argv) {
 				cout << "C_plus=" << C_plus << endl;
 				cout << "C_minus=" << C_minus << endl;
 
+
+
+				//Integrals
 				if (iter == 1) {
 					integrals << "t, Ek, Vmax,  time(min), dEk, Q_in, Q_out, C_average, Q_per_cap, Q_per_width"
 						<< ", Cv_per_cap, Cv_per_width, C_av, C_plus, C_minus, L, ten, width"
-						<< ", p_plusAv, p_minusAv, vx_plusAv, vx_minusAv"
-						<< endl;
+						<< ", p_plusAv, p_minusAv, vx_plusAv, vx_minusAv";
+					if (integrals_add1) {
+						integrals << ", Xtip, Xwall, Qtip, Qwall, Cap_pres";
+					}
+					integrals << endl;
 				}
 				integrals << setprecision(20) << fixed;
 				integrals << timeq << " " << Ek << " " << Vmax << " " << (timer2 - timer1) / 60
@@ -4597,8 +5796,19 @@ int main(int argc, char **argv) {
 					<< " " << Cv / Matrix_Y << " " << Cv / Ly_h
 					<< " " << C_av << " " << C_plus << " " << C_minus
 					<< " " << len << " " << ten << " " << width
-					<< " " << p_plusAv << " " << p_minusAv << " " << vx_plusAv << " " << vx_minusAv
-					<< endl;
+					<< " " << p_plusAv << " " << p_minusAv << " " << vx_plusAv << " " << vx_minusAv;
+				if (integrals_add1) {
+					double x_tip = Geom.change_sign_at_X(hx_h, hy_h, C_h, Geom.nyg / 2);
+					double x_wall = Geom.change_sign_at_X(hx_h, hy_h, C_h, 0);
+					double cap_pres = Geom.pressure_jump(hx_h, hy_h, p_true_h, x_tip, 0.1);
+					double Q_tip = Geom.flow_rate(hx_h, hy_h, vx_h, Ly_h, (unsigned int)(x_tip / hx_h));
+					double Q_wall = Geom.flow_rate(hx_h, hy_h, vx_h, Ly_h, (unsigned int)(x_wall / hx_h));
+
+					integrals << " " << x_tip << " " << x_wall << " " << Q_tip << " " << Q_wall << " " << cap_pres;
+					cout << "x_tip=" << x_tip << endl;
+				}
+
+				integrals << endl;
 
 				Ek_old = Ek;
 
@@ -4620,36 +5830,86 @@ int main(int argc, char **argv) {
 					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 					true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
 					copied = true;
 				}
 				write_i++;
 				stringstream ss; string file_name;	ss.str(""); ss.clear();
 				ss << write_i;		file_name = ss.str();
-
 				Geom.write_field(C_h, file_name, timeq, each);
-				//Geom.write_field(vx_h, "vx" + file_name, timeq, each);
-				//Geom.write_field(vy_h, "vy" + file_name, timeq, each);
 				Geom.write_field(p_true_h, "true_p_" + file_name, timeq, each);
-				Geom.write_field(p_h, "p_" + file_name, timeq, each);
+				Geom.write_field(mu_h, "mu_" + file_name, timeq, each);
 
 				if (curv_calc) {
-					Geom.curvature_direct(C_h, hx_h, hy_h, curv1);
-					Geom.curvature_direct2(C_h, hx_h, hy_h, curv2);
+					Geom.curvature_direct(C_h, hx_h, hy_h, curv1, 0.1);
+					Geom.curvature_direct(C_h, hx_h, hy_h, curv2, 0.001);
 					//Geom.curvature_2_steps(C_h, nx_dC, ny_dC, hx_h, hy_h, curv2);
 					Geom.write_field(curv1, "curv_" + file_name, timeq, each);
 					Geom.write_field(curv2, "curv2_" + file_name, timeq, each);
 				}
 
+				if (vibration == 1) {
 
-				if (linear_profile) {
-					string head = "i x C P_true P Mu curv curv2";
-					Geom.write_linear_profile(file_name, head, timeq, 1, hx_h, C_h, p_true_h, p_h, mu_h, curv1, curv2);
+
+					WW_from_Phi << <gridD, blockD >> > (WX, WY, Phi, C);
+					cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(WX_h, WX, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(WY_h, WY, size_b, cudaMemcpyDeviceToHost);
+					Geom.write_field(Phi_h, "Phi_" + file_name, timeq, each);
+					Geom.write_field(WX_h, "WX_" + file_name, timeq, each);
+					Geom.write_field(WY_h, "WY_" + file_name, timeq, each);
+
+					if (test_output_switch) test_output << timeq << " " << MAXval(Phi_h, size_l) << " " << MINval(Phi_h, size_l) << " " << Phi_h[0 + Geom.OFFSET*Geom.nyg] - Phi_h[Geom.nxg + Geom.OFFSET*Geom.nyg] << endl;
 				}
+
+
+				if (horizontal_profile) {
+					double *var[20];
+					string head = "i x C P_true P Mu vx vy";
+					var[0] = C_h; var[1] = p_true_h; var[2] = p_h; var[3] = mu_h;
+					var[4] = vx_h; var[5] = vy_h;
+					int n = 6;
+					if (curv_calc) {
+						head.append(" curv1 curv2");
+						var[n] = curv1; n++;
+						var[n] = curv2; n++;
+					}
+					if (vibration == 1) {
+						head.append(" Phi");
+						head.append(" WX");
+						head.append(" WY");
+						var[n] = Phi_h; n++;
+						var[n] = WX_h; n++;
+						var[n] = WY_h; n++;
+					}
+					Geom.write_linear_profile(file_name, head, timeq, 1, hx_h, var, n);
+				}
+				if (vertical_profile && integrals_add1) {
+					double *var[20];
+					string head = "j y C P_true P Mu vx vy";
+					var[0] = C_h; var[1] = p_true_h; var[2] = p_h; var[3] = mu_h;
+					var[4] = vx_h; var[5] = vy_h;
+					int n = 6;
+					double x_tip = Geom.change_sign_at_X(hx_h, hy_h, C_h, Geom.nyg / 2);
+					double x_wall = Geom.change_sign_at_X(hx_h, hy_h, C_h, 0);
+					if (vibration == 1) {
+						head.append(" Phi");
+						head.append(" WX");
+						head.append(" WY");
+						var[n] = Phi_h; n++;
+						var[n] = WX_h; n++;
+						var[n] = WY_h; n++;
+					}
+					Geom.write_section_profile(file_name + "_tip", head, timeq, 1, hy_h, var, n, (unsigned int)(x_tip / hx_h));
+					Geom.write_section_profile(file_name + "_wall", head, timeq, 1, hy_h, var, n, (unsigned int)(x_wall / hx_h));
+					Geom.write_section_profile(file_name + "_end", head, timeq, 1, hy_h, var, n, Geom.nxg - 1);
+				}
+
+
 				//Geom.write_field(mu_h, "mu" + file_name, timeq, each);
 			}
 
-			//fields writting for stupid tecplot
+			//fields writting for *** tecplot
 			if (tecplot != 0 && (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1))
 			{
 				if (copied == false) {
@@ -4659,10 +5919,24 @@ int main(int argc, char **argv) {
 					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
 					true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h);
+						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
 					copied = true;
 				}
-				Geom.write_field_tecplot(tecplot, hx_h, hy_h, vx_h, vy_h, p_true_h, C_h, mu_h, "fields", timeq, each, iter);
+				double *var[10];
+				int n = 0;
+				string head = "VARIABLES=\"x\",\"y\",\"C\",\"p\",\"mu\",\"vx\",\"vy\"";
+				var[n] = C_h; n++;
+				var[n] = p_true_h; n++;
+				var[n] = mu_h; n++;
+				var[n] = vx_h; n++;
+				var[n] = vy_h; n++;
+				if (vibration == 1) {
+					head.append(",\"WX\",\"WY\",\"Phi\"");
+					var[n] = WX_h; n++;
+					var[n] = WY_h; n++;
+					var[n] = Phi_h; n++;
+				}
+				Geom.write_field_tecplot(tecplot, hx_h, hy_h, "fields", timeq, each, iter, var, n, head);
 			}
 
 
@@ -4676,9 +5950,23 @@ int main(int argc, char **argv) {
 					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+					if (vibration == 1) cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
 					copied = true;
 				}
-				Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
+				//Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
+				double * var[10];
+				unsigned int n = 0;
+				var[n] = vx_h; n++;
+				var[n] = vy_h; n++;
+				var[n] = p_h; n++;
+				var[n] = C_h; n++;
+				var[n] = mu_h; n++;
+				if (vibration == 1)
+				{
+					var[n] = Phi_h;
+					n++;
+				}
+				Geom.save(var, n, iter, write_i, timeq, kk);
 			}
 			copied = false;
 			// the end of 4th step

@@ -240,3 +240,16 @@ ModelManifest.xml
 
 # FAKE - F# Make
 .fake/
+/fields
+/horizontal_profile
+/import
+/RES
+/vertical_profile
+/recovery.dat
+/recovery2.dat
+/integrals.dat
+/inp_test.dat
+/geomSettingCheck.txt
+/fields.dat
+/in_the_middle_of_nowhere.vcxproj
+/in_the_middle_of_nowhere.sln
