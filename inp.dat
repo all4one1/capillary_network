@@ -1,52 +1,51 @@
-time_limit = 50
-time_fields = 0.2  				// fraction of time to write fields to a file
+time_limit = 0.1
+time_fields = 0.01  				// fraction of time to write fields to a file
 time_recovery = 1.0				// fraction of time to save data
-time_display = 0.02 				// fraction of time to display some data and write integrals
-each_xy = 1 					//each #th node to write to a file
-integrals_add1 = 0  				// дополнительные значения в файл integrals.dat (для geometry = tube)
-horizontal_profile = 0 				// записывать ли значения полей вдоль оси капилляра (y = 0.5 Ly) 
-vertical_profile = 0  				//записывать ли поперечные профили полей (3 профиля х: 1) на уровне конца мениска, 2) границы раздела у стенки 3) и на конце трубки)
+time_display = 0.01 				// fraction of time to display some data and write integrals
+each_xy = 4 					//each #th node to write to a file
+integrals_add1 = 1  				// дополнительные значения в файл integrals.dat (для geometry = tube)
+horizontal_profile = 1 				// записывать ли значения полей вдоль оси капилляра (y = 0.5 Ly) 
+vertical_profile = 1  				//записывать ли поперечные профили полей (3 профиля х: 1) на уровне конца мениска, 2) границы раздела у стенки 3) и на конце трубки)
 tecplot = 10000 				// blanked value, set zero if you dont want to use tecplot
 
-
+GPU_id = 0
 
 ny = 200	// nodes of the pore width
-nx = 800 	// nodes of the tube length
+nx = 600 	// nodes of the tube length
 #tau = 7.0e-7  //для M = 0.0001
-tau = 4.0e-6   //для M = 0.001
+tau = 4.0e-7   //для M = 0.001
 A = -0.5 
 Ca = 1.0e-4    //Cn
-Gr = 0
-alpha = 90 
-Pe = 1e+3  
-MM = 1.0e-2
+Gr = 1.0e2 
+alpha = 90
+Re = 1.e-1 
+Pe = 1.e2  
+MM = 1.0e-3
 
 
+#dP = 0
 
-PHI_BORDER_LEFT = 0
-PHI_BORDER_RIGHT = 2
-
-vibration = 1  					// тип вибраций, 0 - без вибраций, 1 - осредненные уравнения, 2-3 - еще какие-то (тест) 
-VV = 30					// параметр V
+vibration = 0  					// тип вибраций, 0 - без вибраций, 1 - осредненные уравнения, 2-3 - еще какие-то (тест) 
+VV = 0					// параметр V
 vibr_X = 1   					//направление вибраций вдоль х и y (безразмерные WOx и W0y)
 vibr_Y = 0  
 
 
 
-filling = no				// options: no (default), shift (shift along x and finite initial thickness), horizontal (like we used in RT problem), sphere (круг в центре) 
-fill_gradually_x = 0.2  			// положение границы раздела, если filling = shift
+filling = shift 				// options: no (default), shift (shift along x and finite initial thickness), horizontal (like we used in RT problem), sphere (круг в центре) 
+fill_gradually_x = 1.0  			// положение границы раздела, если filling = shift
 horizontal_amp = 0.05				// амплитуда косинуса, если filling = horizontal
 sphere_R0 = 0.2 				//радиус круга, если filling = sphere
 
 
-curv_calc = 0 					// вычислять ли кривизну (тест)
+curv_calc = 1 					// вычислять ли кривизну (тест)
 Phase_field = 1 				//  Program type, 1 is phase field, 0 is single phase flow
 pure_diffusion = 0 				// 0 is just ordinary calculation, 1 is pure diffusion
 geometry = tube
 
 
-GPU_id = 0
-read_recovery = 1
+
+read_recovery = 0
 read_concentration = 0  // ignored if read_recovery = 1
 reset_time = 0 // switched off if read_recovery = 0
 invert_C = 0    // switched off if reset_time = 0

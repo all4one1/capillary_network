@@ -1,4 +1,4 @@
-﻿#define ThisSoftwareVersion "010222"
+﻿#define ThisSoftwareVersion "290622"
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -274,6 +274,10 @@ public:
 		open_file(file_name);
 		stat = 0;
 	}
+	ReadingFile()
+	{
+		stat = 0;
+	}
 
 	void open_file(string file_name) {
 		read.open(file_name.c_str());
@@ -294,6 +298,7 @@ public:
 	template <typename T>
 	int reading(T &var, string parameter_name, T def_var, T min = 0, T max = 0) {
 		int ret = 0;
+		stat = 0;
 		transform(parameter_name.begin(), parameter_name.end(), parameter_name.begin(), ::tolower);
 		iss.clear();
 		iss.seekg(0);
@@ -339,6 +344,7 @@ public:
 	}
 
 	void reading_string(string &var, string parameter_name, string def_var) {
+		stat = 0;
 		transform(parameter_name.begin(), parameter_name.end(), parameter_name.begin(), ::tolower);
 		iss.clear();
 		iss.seekg(0);
@@ -605,12 +611,26 @@ __global__ void chemical_potential(double *mu, double *C)
 			break;
 		case 2: //upper rigid
 			mu[l] = dy1_eq_0_down(l, mu);
+			/*
+			int down1 = n4[l];
+			int down2 = n4[n4[l]];
+			double m1 = -MM*Gr* r_gamma(down1)	+2.0 * A * C[down1] + 4.0 * pow(C[down1], 3) - Ca*(dx2(down1, C) + dy2(down1, C));
+			double m2 = -MM*Gr* r_gamma(down2) +2.0 * A * C[down2] + 4.0 * pow(C[down2], 3) - Ca*(dx2(down2, C) + dy2(down2, C));
+			mu[l] = (4.0*m1 - m2) / 3.0;
+			*/
 			break;
 		case 3: //right rigid
 			mu[l] = dx1_eq_0_back(l, mu);
 			break;
 		case 4: //lower rigid
 			mu[l] = dy1_eq_0_up(l, mu);
+			/*
+			int up1 = n2[l];
+			int up2 = n2[n2[l]];
+			double m1_ = -MM*Gr* r_gamma(up1) +2.0 * A * C[up1] + 4.0 * pow(C[up1], 3) - Ca*(dx2(up1, C) + dy2(up1, C));
+			double m2_ = -MM*Gr* r_gamma(up2) +2.0 * A * C[up2] + 4.0 * pow(C[up2], 3) - Ca*(dx2(up2, C) + dy2(up2, C));
+			mu[l] = (4.0*m1_ - m2_) / 3.0;
+			*/
 			break;
 		case 5: //left upper rigid corner
 			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_down(l, mu));
@@ -629,6 +649,119 @@ __global__ void chemical_potential(double *mu, double *C)
 			break;
 		case 10://outlet (to right)
 			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - MM*Gr* r_gamma(l); //dx1_eq_0_back(l, mu);
+			break;
+		default:
+			break;
+		}
+
+	}
+}
+
+__global__ void chemical_potential_border(double *mu, double *C)
+{
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+		switch (t[l])
+		{
+		case 0: //inner
+
+			break;
+		case 1: //left rigid
+			mu[l] = dx1_eq_0_forward(l, mu);
+			break;
+		case 2: //upper rigid
+			mu[l] = dy1_eq_0_down(l, mu);// -2.0 / 3.0*hy*(-Gr*r_gamma(l)*C[l]);
+			/*
+			int down1 = n4[l];
+			int down2 = n4[n4[l]];
+			double m1 = -MM*Gr* r_gamma(down1)	+2.0 * A * C[down1] + 4.0 * pow(C[down1], 3) - Ca*(dx2(down1, C) + dy2(down1, C));
+			double m2 = -MM*Gr* r_gamma(down2) +2.0 * A * C[down2] + 4.0 * pow(C[down2], 3) - Ca*(dx2(down2, C) + dy2(down2, C));
+			mu[l] = (4.0*m1 - m2) / 3.0;
+			*/
+			break;
+		case 3: //right rigid
+			mu[l] = dx1_eq_0_back(l, mu);
+			break;
+		case 4: //lower rigid
+			mu[l] = dy1_eq_0_up(l, mu);// +2.0 / 3.0*hy*(-Gr*r_gamma(l)*C[l]);;
+			/*
+			int up1 = n2[l];
+			int up2 = n2[n2[l]];
+			double m1_ = -MM*Gr* r_gamma(up1) +2.0 * A * C[up1] + 4.0 * pow(C[up1], 3) - Ca*(dx2(up1, C) + dy2(up1, C));
+			double m2_ = -MM*Gr* r_gamma(up2) +2.0 * A * C[up2] + 4.0 * pow(C[up2], 3) - Ca*(dx2(up2, C) + dy2(up2, C));
+			mu[l] = (4.0*m1_ - m2_) / 3.0;
+			*/
+			break;
+		case 5: //left upper rigid corner
+			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_down(l, mu));
+			break;
+		case 6: //right upper rigid corner
+			mu[l] = 0.5* (dx1_eq_0_back(l, mu) + dy1_eq_0_down(l, mu));
+			break;
+		case 7: //right lower rigid corner
+			mu[l] = 0.5* (dx1_eq_0_back(l, mu) + dy1_eq_0_up(l, mu));
+			break;
+		case 8: //left lower rigid corner
+			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_up(l, mu));
+			break;
+		case 9: //inlet (from left)
+			//mu[l] = dx1_eq_0_forward(l, mu);
+			//mu[l] = dx2_eq_0_forward(l, mu);
+			break;
+		case 10://outlet (to right)
+			//mu[l] = dx1_eq_0_back(l, mu);
+			//mu[l] = dx2_eq_0_back(l, mu);
+			break;
+		default:
+			break;
+		}
+
+	}
+}
+
+__global__ void chemical_potential_inside(double *mu, double *C)
+{
+	unsigned int l = threadIdx.x + blockIdx.x*blockDim.x;
+
+	if (l < n)
+	{
+		switch (t[l])
+		{
+		case 0: //inner
+			mu[l] = -MM*Gr* r_gamma(l) //nu takoe // da norm
+				+ 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - Ca*(dx2(l, C) + dy2(l, C));
+			break;
+		case 1: //left rigid
+
+			break;
+		case 2: //upper rigid
+
+			break;
+		case 3: //right rigid
+
+			break;
+		case 4: //lower rigid
+
+			break;
+		case 5: //left upper rigid corner
+			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_down(l, mu));
+			break;
+		case 6: //right upper rigid corner
+			mu[l] = 0.5* (dx1_eq_0_back(l, mu) + dy1_eq_0_down(l, mu));
+			break;
+		case 7: //right lower rigid corner
+			mu[l] = 0.5* (dx1_eq_0_back(l, mu) + dy1_eq_0_up(l, mu));
+			break;
+		case 8: //left lower rigid corner
+			mu[l] = 0.5* (dx1_eq_0_forward(l, mu) + dy1_eq_0_up(l, mu));
+			break;
+		case 9: //inlet (from left)
+			mu[l] = -Ca*dx2_forward(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - MM*Gr* r_gamma(l); 
+			break;
+		case 10://outlet (to right)
+			mu[l] = -Ca*dx2_back(l, C) - Ca*dy2(l, C) + 2.0 * A * C[l] + 4.0 * pow(C[l], 3) - MM*Gr* r_gamma(l);
 			break;
 		default:
 			break;
@@ -1611,14 +1744,14 @@ __global__ void Poisson(double *p, double *p0, double *ux, double *uy, double *m
 				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 9: //inlet (from left)
-			p[l] = 8.0 / Re*Lx*dP
+			p[l] = 8.0 / Re*Lx*dP 
 				+ PHASE*((0.5*Ca*pow(dx1_forward(l, C), 2)
 					- mu[l] * C[l]
 					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
 					- Gr*C[l] * r_gamma(l));
 			break;
 		case 10://outlet (to right)
-			p[l] = 0
+			p[l] = 0 
 				+ PHASE*((0.5*Ca*pow(dx1_back(l, C), 2)
 					- mu[l] * C[l]
 					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
@@ -1675,7 +1808,7 @@ __global__ void Poisson_pulsation_Phi(double *p, double *p0, double *ux, double 
 				+ dy1_eq_0_up(l, p0) - uy[l] * 2.0 * hy / tau / 3.0);
 			break;
 		case 9: //inlet (from left)
-			p[l] = 8.0 / Re*Lx*dP
+			p[l] = 8.0 / Re*Lx*dP 
 				+ PHASE*((0.5*Ca*pow(dx1_forward(l, C), 2)
 					- mu[l] * C[l]
 					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
@@ -1684,7 +1817,7 @@ __global__ void Poisson_pulsation_Phi(double *p, double *p0, double *ux, double 
 
 			break;
 		case 10://outlet (to right)
-			p[l] = 0
+			p[l] = 0 
 				+ PHASE*((0.5*Ca*pow(dx1_back(l, C), 2)
 					- mu[l] * C[l]
 					+ A*pow(C[l], 2) + pow(C[l], 4)) / MM
@@ -1816,6 +1949,10 @@ __global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, do
 			else if (PHI_border_left == 3) {
 				Phi[l] = dx1_eq_0_forward(l, Phi0) - (C[l] * vibr_X) * 2.0 * hx / 3.0;
 			}
+			else if (PHI_border_left == 4) {
+				Phi[l] = 0.5*(-hy*hy*C[l] + Phi[n2[l]] + Phi[n4[l]]);
+			}
+
 			break;
 		case 10://outlet (to right)
 			if (PHI_border_right == 0) {
@@ -1829,6 +1966,9 @@ __global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, do
 			}
 			else if (PHI_border_right == 3) {
 				Phi[l] = dx1_eq_0_back(l, Phi0) + (C[l] * vibr_X) * 2.0 * hx / 3.0;
+			}
+			else if (PHI_border_right == 4) {
+				Phi[l] = 0.5*(-hy*hy*C[l] + Phi[n2[l]] + Phi[n4[l]]);
 			}
 			break;
 		default:
@@ -3146,7 +3286,7 @@ struct multi_cross {
 
 	}
 
-	void write_linear_profile(string file_name, string head, double time, int step, double hx, double **f, int N_fields) {
+	void write_linear_profile(string file_name, string head, double time, int step, double hx, double **f, int N_fields, int j_ = -1) {
 #ifdef __linux__ 
 		ofstream to_file(("horizontal_profile/" + file_name + ".dat").c_str());
 #endif
@@ -3158,6 +3298,7 @@ struct multi_cross {
 		to_file << head << " t=" << time << endl;
 		//for (unsigned int j = 0; j <= nyg; j = j + step) {
 		unsigned int j = nyg / 2;
+		if (j_ > -1) j = j_;
 		for (unsigned int i = 0; i <= nxg; i = i + step) {
 			l = i + OFFSET*j; L = J[l];
 			//if (J[l] == J[l]) to_file << i << " " << j << " " << f[L] << endl;
@@ -4817,8 +4958,11 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись,
 	осознание того, как надо было, пришло потом, когда переписывать заново стало долго*/
 	double WX = 0.0, WY = 0.0;
+	double dxC = 0, dyC = 0;
 	int left, right, up, down, left2, right2, up2, down2;
 
+
+	
 	for (unsigned int l = 0; l < size; l++) {
 		if (PHASE == 0) {
 			p_true[l] = p[l];
@@ -4834,7 +4978,8 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 
 		p_true[l] = p[l] +
 			(+mu[l] * C[l] - A*pow(C[l], 2) - pow(C[l], 4)) / M
-			+ Gr*((J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA + (J_back[l] / OFFSET) * hy*sinA);
+			+ C[l] * Gr*((J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA + (J_back[l] / OFFSET) * hy*sinA);
+
 
 
 		switch (t[l])
@@ -4891,14 +5036,26 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 				+ pow((-0.5*(3.0*C[l] - 4.0*C[up] + C[up2]) / hy), 2));
 			break;
 		case 9: //inlet (from left)
-			p_true[l] += -0.5*Ca / M*(
-				pow((-0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx), 2)
-				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			dxC = -0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx;
+			dyC = 0.5*(C[up] - C[down]) / hy;
+			p_true[l] += -0.5*Ca / M*(pow(dxC, 2) + pow(dyC, 2));
+			if (VV_h > 0) {
+				WX = -C[l] * vibrX + dxC;
+				WY = -C[l] * vibrY + dyC;
+
+				p_true[l] += -VV_h*0.5*(WX*WX + WY*WY);
+			}
 			break;
 		case 10://outlet (to right)
-			p_true[l] += -0.5*Ca / M*(
-				pow((0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx), 2)
-				+ pow((0.5*(C[up] - C[down]) / hy), 2));
+			dxC = 0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx;
+			dyC = 0.5*(C[up] - C[down]) / hy;
+			p_true[l] += -0.5*Ca / M*(pow(dxC, 2)+ pow(dyC, 2));
+			if (VV_h > 0) {
+				WX = -C[l] * vibrX + dxC;
+				WY = -C[l] * vibrY + dyC;
+
+				p_true[l] += -VV_h*0.5*(WX*WX + WY*WY);
+			}
 			break;
 		default:
 			break;
@@ -5555,7 +5712,7 @@ int main(int argc, char **argv) {
 
 
 
-	pause
+	//pause
 		// the main time loop of the whole calculation procedure
 		while (true) {
 
@@ -5619,7 +5776,10 @@ int main(int argc, char **argv) {
 				   //1st step, calculating of time evolutionary parts of velocity (quasi-velocity) and concentration and chemical potential
 				{
 					if (PHASE_h == 1) {
-						chemical_potential << <gridD, blockD >> > (mu, C);
+						chemical_potential << <gridD, blockD >> > (mu, C); 
+						
+						//chemical_potential_inside << <gridD, blockD >> > (mu, C);
+						//chemical_potential_border << <gridD, blockD >> > (mu, C);
 						//quasi_velocity_upstream << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 
 						switch (vibration)
@@ -5883,6 +6043,10 @@ int main(int argc, char **argv) {
 						var[n] = WY_h; n++;
 					}
 					Geom.write_linear_profile(file_name, head, timeq, 1, hx_h, var, n);
+					Geom.write_linear_profile(file_name + "_bot", head, timeq, 1, hx_h, var, n, 0);
+					Geom.write_linear_profile(file_name + "_top", head, timeq, 1, hx_h, var, n, Geom.nyg);
+
+
 				}
 				if (vertical_profile && integrals_add1) {
 					double *var[20];
@@ -5903,6 +6067,8 @@ int main(int argc, char **argv) {
 					Geom.write_section_profile(file_name + "_tip", head, timeq, 1, hy_h, var, n, (unsigned int)(x_tip / hx_h));
 					Geom.write_section_profile(file_name + "_wall", head, timeq, 1, hy_h, var, n, (unsigned int)(x_wall / hx_h));
 					Geom.write_section_profile(file_name + "_end", head, timeq, 1, hy_h, var, n, Geom.nxg - 1);
+					Geom.write_section_profile(file_name + "_start", head, timeq, 1, hy_h, var, n, 0);
+					//Geom.write_section_profile(file_name + "_j10", head, timeq, 1, hy_h, var, n, 10);
 				}
 
 
