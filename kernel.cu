@@ -1950,7 +1950,7 @@ __global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, do
 				Phi[l] = dx1_eq_0_forward(l, Phi0) - (C[l] * vibr_X) * 2.0 * hx / 3.0;
 			}
 			else if (PHI_border_left == 4) {
-				Phi[l] = 0.5*(-hy*hy*C[l] + Phi[n2[l]] + Phi[n4[l]]);
+				Phi[l] = 0.5*(-hy*hy*C[l] + Phi0[n2[l]] + Phi0[n4[l]]);
 			}
 
 			break;
@@ -1968,7 +1968,7 @@ __global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, do
 				Phi[l] = dx1_eq_0_back(l, Phi0) + (C[l] * vibr_X) * 2.0 * hx / 3.0;
 			}
 			else if (PHI_border_right == 4) {
-				Phi[l] = 0.5*(-hy*hy*C[l] + Phi[n2[l]] + Phi[n4[l]]);
+				Phi[l] = 0.5*(-hy*hy*C[l] + Phi0[n2[l]] + Phi0[n4[l]]);
 			}
 			break;
 		default:
