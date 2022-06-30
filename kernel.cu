@@ -1,4 +1,4 @@
-﻿#define ThisSoftwareVersion "290622"
+﻿#define ThisSoftwareVersion "300622"
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -578,7 +578,14 @@ __device__ double VgradF_forward(unsigned int l, double *f, double *vx, double *
 */
 
 
-
+//integer global inxed i
+__device__ unsigned int iG(unsigned int l) {
+	return 	(J_back[l] - (J_back[l] / OFFSET)*OFFSET);
+}
+//integer global index j
+__device__ unsigned int jG(unsigned int l) {
+	return 	(J_back[l] / OFFSET);
+}
 
 __device__  double r_gamma(unsigned int l)
 {
@@ -1950,7 +1957,7 @@ __global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, do
 				Phi[l] = dx1_eq_0_forward(l, Phi0) - (C[l] * vibr_X) * 2.0 * hx / 3.0;
 			}
 			else if (PHI_border_left == 4) {
-				Phi[l] = 0.5*(-hy*hy*C[l] + Phi0[n2[l]] + Phi0[n4[l]]);
+				Phi[l] = C[l]*jG(l)*hy;
 			}
 
 			break;
@@ -1968,7 +1975,7 @@ __global__ void Poisson_Phi(double *Phi, double *Phi0, double *C, double *WX, do
 				Phi[l] = dx1_eq_0_back(l, Phi0) + (C[l] * vibr_X) * 2.0 * hx / 3.0;
 			}
 			else if (PHI_border_right == 4) {
-				Phi[l] = 0.5*(-hy*hy*C[l] + Phi0[n2[l]] + Phi0[n4[l]]);
+				Phi[l] = C[l] * jG(l)*hy;
 			}
 			break;
 		default:
