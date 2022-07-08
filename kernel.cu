@@ -1,4 +1,5 @@
-﻿#define ThisSoftwareVersion "300622"
+﻿#define ThisSoftwareVersion "080722"
+#define CodeName "in the middle of nowhere"
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -4961,10 +4962,10 @@ void stupid_step(int *nn1, int *nn2, int *nn3, int *nn4, int *tt, int *JJ, unsig
 
 //pressure transformation to real pressure
 void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int *n1, int *n2, int *n3, int *n4, int *J_back,
-	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA, unsigned int PHASE, double VV_h, double vibrX, double vibrY) {
+	double tau, unsigned int size, double hx, double hy, double Ca, double A, double Gr, double M, int OFFSET, double sinA, double cosA, unsigned int PHASE, double VV_h, double vibrX, double vibrY, double *Phi, double *Wx, double *Wy) {
 	/*функция написана не совсем интуитивно понятно, были ошибки, ошибки исправлялись,
 	осознание того, как надо было, пришло потом, когда переписывать заново стало долго*/
-	double WX = 0.0, WY = 0.0;
+//	double WX = 0.0, WY = 0.0;
 	double dxC = 0, dyC = 0;
 	int left, right, up, down, left2, right2, up2, down2;
 
@@ -4996,10 +4997,10 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 				pow((0.5*(C[right] - C[left]) / hx), 2)
 				+ pow((0.5*(C[up] - C[down]) / hy), 2));
 			if (VV_h > 0) {
-				WX = -C[l] * vibrX + 0.5*(C[right] - C[left]) / hx;
-				WY = -C[l] * vibrY + 0.5*(C[up] - C[down]) / hy;
+				//WX = -C[l] * vibrX + 0.5*(C[right] - C[left]) / hx;
+				//WY = -C[l] * vibrY + 0.5*(C[up] - C[down]) / hy;
 
-				p_true[l] += -VV_h*0.5*(WX*WX + WY*WY);
+				p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
 			}
 			break;
 		case 1: //left rigid
@@ -5047,10 +5048,10 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			dyC = 0.5*(C[up] - C[down]) / hy;
 			p_true[l] += -0.5*Ca / M*(pow(dxC, 2) + pow(dyC, 2));
 			if (VV_h > 0) {
-				WX = -C[l] * vibrX + dxC;
-				WY = -C[l] * vibrY + dyC;
+				//WX = -C[l] * vibrX + dxC;
+				//WY = -C[l] * vibrY + dyC;
 
-				p_true[l] += -VV_h*0.5*(WX*WX + WY*WY);
+				p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
 			}
 			break;
 		case 10://outlet (to right)
@@ -5058,10 +5059,10 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			dyC = 0.5*(C[up] - C[down]) / hy;
 			p_true[l] += -0.5*Ca / M*(pow(dxC, 2)+ pow(dyC, 2));
 			if (VV_h > 0) {
-				WX = -C[l] * vibrX + dxC;
-				WY = -C[l] * vibrY + dyC;
+				//WX = -C[l] * vibrX + dxC;
+				//WY = -C[l] * vibrY + dyC;
 
-				p_true[l] += -VV_h*0.5*(WX*WX + WY*WY);
+				p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
 			}
 			break;
 		default:
@@ -5711,7 +5712,7 @@ int main(int argc, char **argv) {
 
 
 
-	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back, tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
+	true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back, tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h, Phi_h, WX_h, WY_h);
 
 
 
@@ -5912,10 +5913,16 @@ int main(int argc, char **argv) {
 				cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 				cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+				if (vibration == 1) {
+					WW_from_Phi << <gridD, blockD >> > (WX, WY, Phi, C);
+					cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(WX_h, WX, size_b, cudaMemcpyDeviceToHost);
+					cudaMemcpy(WY_h, WY, size_b, cudaMemcpyDeviceToHost);
+				}
 				copied = true;
 
 				true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
+					tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h, Phi_h, WX_h, WY_h);
 
 				double len, ten, vol, width, p_plusAv, p_minusAv, p_Av, vx_plusAv, vx_minusAv, vx_Av;
 				velocity(size_l, hx_h, hy_h, vx_h, vy_h, Ek, Vmax);
@@ -5996,8 +6003,14 @@ int main(int argc, char **argv) {
 					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+					if (vibration == 1) {
+						WW_from_Phi << <gridD, blockD >> > (WX, WY, Phi, C);
+						cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
+						cudaMemcpy(WX_h, WX, size_b, cudaMemcpyDeviceToHost);
+						cudaMemcpy(WY_h, WY, size_b, cudaMemcpyDeviceToHost);
+					}
 					true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
+						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h, Phi_h, WX_h, WY_h);
 					copied = true;
 				}
 				write_i++;
@@ -6016,12 +6029,6 @@ int main(int argc, char **argv) {
 				}
 
 				if (vibration == 1) {
-
-
-					WW_from_Phi << <gridD, blockD >> > (WX, WY, Phi, C);
-					cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
-					cudaMemcpy(WX_h, WX, size_b, cudaMemcpyDeviceToHost);
-					cudaMemcpy(WY_h, WY, size_b, cudaMemcpyDeviceToHost);
 					Geom.write_field(Phi_h, "Phi_" + file_name, timeq, each);
 					Geom.write_field(WX_h, "WX_" + file_name, timeq, each);
 					Geom.write_field(WY_h, "WY_" + file_name, timeq, each);
@@ -6082,7 +6089,7 @@ int main(int argc, char **argv) {
 				//Geom.write_field(mu_h, "mu" + file_name, timeq, each);
 			}
 
-			//fields writting for *** tecplot
+			//fields writting for tecplot
 			if (tecplot != 0 && (iter % (int(time_fields * tt)) == 0 || iter == 1 || stop == 1))
 			{
 				if (copied == false) {
@@ -6091,8 +6098,14 @@ int main(int argc, char **argv) {
 					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
+					if (vibration == 1) {
+						WW_from_Phi << <gridD, blockD >> > (WX, WY, Phi, C);
+						cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
+						cudaMemcpy(WX_h, WX, size_b, cudaMemcpyDeviceToHost);
+						cudaMemcpy(WY_h, WY, size_b, cudaMemcpyDeviceToHost);
+					}
 					true_pressure(p_h, p_true_h, C_h, mu_h, Geom.t, Geom.n1, Geom.n2, Geom.n3, Geom.n4, Geom.J_back,
-						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h);
+						tau_h, Geom.TOTAL_SIZE, hx_h, hy_h, Ca_h, A_h, Gr_h, MM_h, Geom.OFFSET, sinA_h, cosA_h, PHASE_h, VV_h, vibr_X_h, vibr_Y_h, Phi_h, WX_h, WY_h);
 					copied = true;
 				}
 				double *var[10];
@@ -6123,7 +6136,12 @@ int main(int argc, char **argv) {
 					cudaMemcpy(p_h, p, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(C_h, C, size_b, cudaMemcpyDeviceToHost);
 					cudaMemcpy(mu_h, mu, size_b, cudaMemcpyDeviceToHost);
-					if (vibration == 1) cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
+					if (vibration == 1) {
+						WW_from_Phi << <gridD, blockD >> > (WX, WY, Phi, C);
+						cudaMemcpy(Phi_h, Phi, size_b, cudaMemcpyDeviceToHost);
+						cudaMemcpy(WX_h, WX, size_b, cudaMemcpyDeviceToHost);
+						cudaMemcpy(WY_h, WY, size_b, cudaMemcpyDeviceToHost);
+					}
 					copied = true;
 				}
 				//Geom.save(vx_h, vy_h, p_h, C_h, mu_h, iter, write_i, timeq, kk);
