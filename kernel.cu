@@ -1,4 +1,4 @@
-﻿#define ThisSoftwareVersion "080722"
+﻿#define ThisSoftwareVersion "200722"
 #define CodeName "in the middle of nowhere"
 
 #include "cuda_runtime.h"
@@ -2012,16 +2012,26 @@ __global__ void WW_from_Phi(double *WX, double *WY, double *Phi, double *C) {
 				WY[l] = 0; // -vibr_Y*C[n3[l]] + dy1(n3[l], Phi);;  //well, think of it if dC/dn != 0
 				break;
 			case 2: //upper rigid
-				WX[l] = 0; // -vibr_X*C[n4[l]] + dx1(n4[l], Phi);;
 				WY[l] = 0;
+				if (t[n4[l]] == 9)
+					WX[l] = -vibr_X*C[l] + dx1_forward(l, Phi);
+				else if (t[n4[l]] == 10)
+					WX[l] = -vibr_X*C[l] + dx1_back(l, Phi);
+				else 
+					WX[l] = -vibr_X*C[l] + dx1(l, Phi);
 				break;
 			case 3: //right rigid
 				WX[l] = 0;
 				WY[l] = 0; // -vibr_Y*C[n1[l]] + dy1(n1[l], Phi);
 				break;
 			case 4: //lower rigid
-				WX[l] = 0; // -vibr_X*C[n2[l]] + dx1(n2[l], Phi);
 				WY[l] = 0;
+				if (t[n2[l]] == 9)
+					WX[l] = -vibr_X*C[l] + dx1_forward(l, Phi);
+				else if (t[n2[l]] == 10)
+					WX[l] = -vibr_X*C[l] + dx1_back(l, Phi);
+				else 
+					WX[l] = -vibr_X*C[l] + dx1(l, Phi);
 				break;
 			case 5: //left upper rigid corner
 				WX[l] = 0; WY[l] = 0;
@@ -4988,7 +4998,11 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			(+mu[l] * C[l] - A*pow(C[l], 2) - pow(C[l], 4)) / M
 			+ C[l] * Gr*((J_back[l] - (J_back[l] / OFFSET)*OFFSET) * hx*cosA + (J_back[l] / OFFSET) * hy*sinA);
 
-
+		if (VV_h > 0) {
+			//WX = -C[l] * vibrX + 0.5*(C[right] - C[left]) / hx;
+			//WY = -C[l] * vibrY + 0.5*(C[up] - C[down]) / hy;
+			p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
+		}
 
 		switch (t[l])
 		{
@@ -4996,12 +5010,6 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			p_true[l] += -0.5*Ca / M*(
 				pow((0.5*(C[right] - C[left]) / hx), 2)
 				+ pow((0.5*(C[up] - C[down]) / hy), 2));
-			if (VV_h > 0) {
-				//WX = -C[l] * vibrX + 0.5*(C[right] - C[left]) / hx;
-				//WY = -C[l] * vibrY + 0.5*(C[up] - C[down]) / hy;
-
-				p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
-			}
 			break;
 		case 1: //left rigid
 			p_true[l] += -0.5*Ca / M*(
@@ -5047,23 +5055,11 @@ void true_pressure(double *p, double *p_true, double *C, double *mu, int *t, int
 			dxC = -0.5*(3.0*C[l] - 4.0*C[right] + C[right2]) / hx;
 			dyC = 0.5*(C[up] - C[down]) / hy;
 			p_true[l] += -0.5*Ca / M*(pow(dxC, 2) + pow(dyC, 2));
-			if (VV_h > 0) {
-				//WX = -C[l] * vibrX + dxC;
-				//WY = -C[l] * vibrY + dyC;
-
-				p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
-			}
 			break;
 		case 10://outlet (to right)
 			dxC = 0.5*(3.0*C[l] - 4.0*C[left] + C[left2]) / hx;
 			dyC = 0.5*(C[up] - C[down]) / hy;
 			p_true[l] += -0.5*Ca / M*(pow(dxC, 2)+ pow(dyC, 2));
-			if (VV_h > 0) {
-				//WX = -C[l] * vibrX + dxC;
-				//WY = -C[l] * vibrY + dyC;
-
-				p_true[l] += -VV_h*0.5*(Wx[l] * Wx[l] + Wy[l] * Wy[l]);
-			}
 			break;
 		default:
 			break;
@@ -5723,7 +5719,6 @@ int main(int argc, char **argv) {
 	//pause
 		// the main time loop of the whole calculation procedure
 		while (true) {
-
 			iter = iter + 1; 	timeq = timeq + tau_h;
 
 			//Poisson equation for pulsation potential
