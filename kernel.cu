@@ -5787,16 +5787,16 @@ int main(int argc, char **argv) {
 
 						switch (vibration)
 						{
-						case 0: //as it is
+						case 0: 
 							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 							break;
-						case 1: //const initial concentration at walls, which is not washed out
+						case 1: 
 							quasi_velocity_pulsation_with_Phi << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq, Phi, WX, WY);
 							break;
-						case 2: //ongoing concentration devours initial one
+						case 2: 
 							quasi_velocity_pulsation << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq);
 							break;
-						case 3: //surface energy formulation by Jacqmin // not finished 
+						case 3: 
 							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 							break;
 						default:
@@ -5831,13 +5831,13 @@ int main(int argc, char **argv) {
 							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 							//quasi_velocity_no_phase_field << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 							break;
-						case 1: //const initial concentration at walls, which is not washed out
+						case 1: 
 							quasi_velocity_pulsation_with_Phi << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq, Phi, WX, WY);
 							break;
-						case 2: //ongoing concentration devours initial one
+						case 2: 
 							quasi_velocity_pulsation << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu, timeq);
 							break;
-						case 3: //surface energy formulation by Jacqmin // not finished 
+						case 3:
 							quasi_velocity << < gridD, blockD >> > (ux, uy, vx, vy, C0, mu);
 							break;
 						default:
